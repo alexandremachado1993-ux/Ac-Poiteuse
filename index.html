@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#C8102E">
+    <title>AC Conger Payer</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="images/icon-192.png">
+    <link rel="apple-touch-icon" href="images/icon-192.png">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Sign-in (shown alone) -->
+    <section id="login" class="login-wrap" hidden></section>
+
+    <!-- Application shell (after sign-in) -->
+    <div id="shell" hidden>
+        <aside class="sidebar" aria-label="Menu">
+            <div class="brand"><img src="images/logo.png" alt=""><div><span data-i18n="app.title">AC Conger Payer</span><small data-i18n="app.tagline"></small></div></div>
+            <nav class="side-nav" id="sideNav" data-i18n-aria-label="app.navigation"></nav>
+            <div class="side-foot">
+                <div class="side-user" id="sideUser"></div>
+                <button type="button" class="button" id="notifButton"></button>
+                <select class="language-select" id="languageSelect" data-i18n-aria-label="app.language"></select>
+                <button type="button" class="button" id="signOutButton"></button>
+            </div>
+        </aside>
+
+        <div class="main">
+            <header class="topbar">
+                <img src="images/logo.png" alt="">
+                <span class="title" data-i18n="app.title">AC Conger Payer</span>
+                <div class="tools">
+                    <span id="connectionState" class="muted"></span>
+                    <button type="button" class="icon-button notif-mobile" id="notifButtonMobile"></button>
+                    <select class="language-select" id="languageSelectMobile" data-i18n-aria-label="app.language"></select>
+                    <button type="button" class="icon-button" id="signOutMobile" data-i18n-aria-label="common.signOut"></button>
+                </div>
+            </header>
+
+            <main class="content">
+                <div id="alerts" aria-live="polite"></div>
+                <section id="page-dashboard" class="page" hidden></section>
+                <section id="page-clock" class="page" hidden></section>
+                <section id="page-leave" class="page" hidden></section>
+                <section id="page-team" class="page" hidden></section>
+                <section id="page-reports" class="page" hidden></section>
+                <section id="page-settings" class="page" hidden></section>
+            </main>
+        </div>
+
+        <nav class="bottom-nav" id="bottomNav" data-i18n-aria-label="app.navigation"></nav>
+    </div>
+
+    <dialog id="editor" class="editor"></dialog>
+    <dialog id="sheet" class="sheet"></dialog>
+
+    <script src="js/storage-adapter.js"></script>
+    <script src="js/i18n.js"></script>
+    <script src="js/translations.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/holidays.js"></script>
+    <script src="js/store.js"></script>
+    <script src="js/permissions.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/hours.js"></script>
+    <script src="js/segments.js"></script>
+    <script src="js/leave.js"></script>
+    <script src="js/countdown.js"></script>
+    <script src="js/explanations.js"></script>
+    <script src="js/xlsx.js"></script>
+    <script src="js/hours-csv.js"></script>
+    <script src="js/xlsx-reader.js"></script>
+    <script src="js/register-import.js"></script>
+    <script src="js/exports.js"></script>
+    <script src="js/editor.js"></script>
+    <script src="js/reminders.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/page-login.js"></script>
+    <script src="js/page-timesheet.js"></script>
+    <script src="js/page-clock.js"></script>
+    <script src="js/page-dashboard.js"></script>
+    <script src="js/page-leave.js"></script>
+    <script src="js/page-clients.js"></script>
+    <script src="js/page-profile.js"></script>
+    <script src="js/page-team.js"></script>
+    <script src="js/page-reports.js"></script>
+    <script src="js/page-admin-panels.js"></script>
+    <script src="js/page-settings.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

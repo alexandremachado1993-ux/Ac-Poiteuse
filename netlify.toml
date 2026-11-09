@@ -1,0 +1,9 @@
+# Netlify: static site at the root.
+[build]
+  publish = "."
+
+# sw.js must never be cached by the browser, otherwise updates never arrive.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"

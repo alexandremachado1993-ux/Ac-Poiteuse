@@ -1,0 +1,7 @@
+{
+  "name": "acp-tests",
+  "private": true,
+  "description": "Automated tests of AC Conger Payer (not part of the app). The app itself has NO dependency.",
+  "scripts": { "test": "node run-all.js" },
+  "devDependencies": { "jsdom": "24.1.3" }
+}

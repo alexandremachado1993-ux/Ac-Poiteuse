@@ -1,0 +1,18 @@
+{
+    "name": "AC Conger Payer + clocking",
+    "short_name": "AC Clocking",
+    "start_url": "./index.html",
+    "scope": "./",
+    "display": "standalone",
+    "background_color": "#F5F5F5",
+    "theme_color": "#C8102E",
+    "icons": [
+        { "src": "images/icon-192.png", "sizes": "192x192", "type": "image/png" },
+        { "src": "images/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    ],
+    "shortcuts": [
+        { "name": "Work", "url": "./index.html?start=work#clock" },
+        { "name": "Travel", "url": "./index.html?start=travel#clock" },
+        { "name": "Timesheet", "url": "./index.html#clock/sheet" }
+    ]
+}
