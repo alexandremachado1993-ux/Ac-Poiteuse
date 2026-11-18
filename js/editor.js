@@ -1,6 +1,6 @@
 /* =============================================================
    editor.js — correction of a DAY (request of 06/11/2026)
-   - managers only ("timesheet.correct.approve"): technicians report an
+   - managers only ("timeclock.correction.approve"): technicians report an
      error instead (page-timesheet.js → Store.requestCorrection);
    - ONE form for the whole day: arrival, departure, MEAL (start / end),
      activity, client, line, note, mandatory REASON; live summary
@@ -37,7 +37,7 @@ const Editor = (() => {
             lines.map(l => "<option" + (l === selected ? " selected" : "") + ">" + E(l) + "</option>").join("");
     }
 
-    const canCorrect = () => Permissions.can("timesheet.correct.approve");
+    const canCorrect = () => Permissions.can("timeclock.correction.approve");
 
     /* open({ id, userId }) to correct the day of an entry; open({ date, userId }) to add a day */
     function open(options) {
@@ -190,9 +190,10 @@ const Editor = (() => {
                 (e.manual ? '<span class="tag">' + E(t("flag.manual")) + "</span>" : "") +
                 (e.imported ? '<span class="tag">' + E(t("flag.imported")) + "</span>" : "") +
                 (e.edited ? '<span class="tag edited">' + E(t("flag.edited")) + "</span>" : "") +
-                (e.toCheck ? '<span class="tag warn">' + E(t("flag.toCheck")) + "</span>" : "");
+                (e.toCheck ? '<span class="tag warn">' + E(t("flag.toCheck")) + "</span>" : "") +
+                (e.urgent ? '<span class="tag urgent">' + E(t("clock.urgentTag")) + "</span>" : "");
             const sub = [e.clientName, e.line, e.note].filter(Boolean).map(E).join(" · ");
-            return '<li style="--c:' + c.color + '">' +
+            return '<li style="--c:' + c.color + '">' + UI.activityIcon(e.category) +
                 '<span class="journal-times">' + Utils.clock(e.start) + " → " + (e.end == null ? "…" : Utils.clock(e.end)) +
                 (e.end != null && Utils.isoLocal(e.end) !== Utils.isoLocal(e.start) ? " (+1)" : "") + "</span>" +
                 '<span class="journal-text"><strong>' + E(Segments.label(e.category)) + "</strong> " + flags +

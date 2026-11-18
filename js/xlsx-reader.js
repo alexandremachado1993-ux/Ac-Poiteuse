@@ -122,5 +122,5 @@ const XlsxReader = (() => {
         return Math.round((value - Math.floor(value === 1 ? 0 : value)) * 1440);
     }
 
-    return { supported, read, toIsoDate, toMinutes, columnIndex };
+    return { read, toIsoDate, toMinutes};
 })();

@@ -10,6 +10,8 @@
    - break reminder  : X h of counted time with no break/lunch;
    - automatic stop  : at the set time the timer is stopped at that
      exact time and the entry is flagged "to check";
+   - night period    : an activity started before 21:00 and not confirmed
+     during the countdown is stopped at 21:00 (Store.nightCheck);
    - forgotten clock : reminder day, time passed, nothing clocked
      today, no holiday and no approved absence;
    - night worker    : ≥ 320 night hours over 12 rolling months
@@ -84,6 +86,14 @@ const Reminders = (() => {
             if (!v.keys[key]) { notify(text); markSeen(key); }
         }
 
+        /* Night period (10/11/2026): an activity started before 21:00 and not
+           confirmed is stopped at 21:00 exactly (app closed during the countdown) */
+        if (running && Store.nightCheck(now)) {
+            add("night-" + running.id, I18n.t("rem.nightStop", { time: Utils.pad(Store.org().nightStart) + ":00" }), "warn");
+            active = found;
+            return active;
+        }
+
         /* Automatic stop (changes the data) */
         if (running && s.autoStopTime) {
             const limit = nextTime(running.start, s.autoStopTime);
@@ -125,5 +135,5 @@ const Reminders = (() => {
         return active;
     }
 
-    return { check, current: () => active.slice(), nextTime, continuousWork };
+    return { check, current: () => active.slice()};
 })();

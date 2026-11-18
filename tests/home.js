@@ -5,6 +5,9 @@ const near=(a,b,m)=>eq(Math.round(a*1000)/1000,Math.round(b*1000)/1000,m);
 const {M}=load();const {Store:S,Hours:H,Segments:G,Utils:U}=M;
 const id=n=>S.users().find(u=>u.name===n).id;const alex=id("Alexandre Machado"),yann=id("Yann Lefloc'h"),enr=id("Enrique Soler");
 const sheet=(y,w)=>G.weekSheet(y,w,S.entries(),S.settings());
+/* 3.1: the fixed home day exists only when the employer turns it on (rule homeDayPreset) */
+S.setCurrentUser(alex);eq(S.declareHomeDay("2026-10-12"),"notPreset","fixed home day off by default: Domicile is clocked like any activity");
+S.setCurrentUser(yann);S.updateOrg({homeDayPreset:true});
 // rights: only accounts that clock
 S.setCurrentUser(yann);eq(S.declareHomeDay("2026-10-12"),"forbidden","manager without clocking right: refused");
 S.setCurrentUser(enr);eq(S.declareHomeDay("2026-10-12"),"forbidden","team lead without clocking right: refused");

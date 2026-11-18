@@ -4,14 +4,15 @@ const load=require("./load");let ok=0,ko=0;
 function eq(a,b,m){const s=JSON.stringify(a)===JSON.stringify(b);s?ok++:(ko++,console.log("FAIL",m,"got",JSON.stringify(a),"expected",JSON.stringify(b)));}
 const {M}=load();const {Store:S,Permissions:P,Auth:A}=M;
 const id=n=>S.users().find(u=>u.name===n).id;const yann=id("Yann Lefloc'h"),jer=id("Jérémie Augé"),enr=id("Enrique Soler");
-eq(JSON.stringify(P.effective(yann).map(x=>x.permission).sort())===JSON.stringify(P.effective(jer).map(x=>x.permission).sort()),true,"identical rights");
-eq([S.user(yann).jobTitle,S.user(jer).jobTitle,S.user(yann).role,S.user(jer).role],["Responsable Qualité","Responsable Commercial France & PDG","admin","admin"],"same role, distinct job titles");
+/* 06/11/2026: two distinct profiles; both keep the administration of accounts and rights */
+eq([P.isAdministrator(yann),P.isAdministrator(jer)],[true,true],"both administer accounts and rights");
+eq([S.user(yann).jobTitle,S.user(jer).jobTitle,S.user(yann).role,S.user(jer).role],["Responsable Qualité","Responsable Commercial France & PDG","quality","director"],"distinct roles and job titles");
 // each manages the other: job title, grants, password reset, status
 for(const [me,other] of [[yann,jer],[jer,yann]]){
   S.setCurrentUser(me);
   eq(S.updateUser(other,{jobTitle:S.user(other).jobTitle+" "}),true,"edit the other's account");
   S.updateUser(other,{jobTitle:S.user(other).jobTitle.trim()});
-  const g=S.grant({userId:other,permission:"clock.own",kind:"temporary",start:"2026-11-05",end:"2026-11-30",reason:"test"});
+  const g=S.grant({userId:other,permission:"timeclock.self",kind:"temporary",start:"2026-11-05",end:"2026-11-30",reason:"test"});
   eq(!!g,true,"grant a right to the other");eq(S.revokeGrant(g.id,"fin"),true,"revoke the other's right");
   S.updateUser(other,{pinHash:"x"});eq(A.resetPassword(other),true,"reset the other's password");
   eq(S.updateUser(other,{accountStatus:"disabled"}),true,"disable the other (one admin stays active)");
@@ -22,14 +23,15 @@ S.setCurrentUser(yann);S.updateUser(jer,{accountStatus:"disabled"});
 eq(S.updateUser(enr,{jobTitle:"Chef d'équipe"}),true,"Yann alone still manages the other accounts");
 eq(S.updateOrg({weeklyBase:39}),true,"and the settings");
 eq(S.updateUser(jer,{role:"technician"}),true,"he may even change the disabled admin's role");
-S.updateUser(jer,{role:"admin",accountStatus:"active"});
+S.updateUser(jer,{role:"admin"});eq(S.user(jer).role,"quality","an old \"admin\" value is converted, not silently ignored");
+S.updateUser(jer,{role:"director",accountStatus:"active"});
 // what IS refused, on purpose
 eq(S.updateUser(yann,{accountStatus:"disabled"}),false,"nobody disables themselves");
 S.setCurrentUser(jer);S.updateUser(yann,{accountStatus:"disabled"});
 eq(S.updateUser(jer,{role:"technician"}),false,"no self-demotion");
 S.setCurrentUser("");eq(S.updateUser(jer,{accountStatus:"disabled"}),false,"never zero active administrator (system check)");
 S.setCurrentUser(jer);S.updateUser(yann,{accountStatus:"active"});
-eq([P.has(yann,"users.manage"),P.has(jer,"users.manage")],[true,true],"both active admins again");
+eq([P.has(yann,"employees.manage"),P.has(jer,"employees.manage")],[true,true],"both active admins again");
 // (totals printed by the second part)
 // ---- precision 3: restore test on a copy, storage use, safety copies; precision 4: audit query
 (async()=>{let ok2=0,ko2=0;const eq2=(a,b,m)=>{const s=JSON.stringify(a)===JSON.stringify(b);s?ok2++:(ko2++,console.log("FAIL",m,"got",JSON.stringify(a),"expected",JSON.stringify(b)));};

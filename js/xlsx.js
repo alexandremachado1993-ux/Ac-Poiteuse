@@ -11,6 +11,7 @@
          rows: [[{ v: "Title", bold: true }], ["text", 7.5], []] }
      ])  → Uint8Array
    Cell: string, number, null, or { v, bold, wrap }.
+   levels (optional): outline level of each row (1 = grouped under the row above, foldable).
    ============================================================= */
 
 const Xlsx = (() => {
@@ -124,10 +125,13 @@ const Xlsx = (() => {
                 if (typeof v === "number" && isFinite(v)) return '<c r="' + ref + '"' + styleAttr + "><v>" + v + "</v></c>";
                 return '<c r="' + ref + '"' + styleAttr + ' t="inlineStr"><is><t xml:space="preserve">' + xml(v) + "</t></is></c>";
             }).join("");
-            return '<row r="' + (r + 1) + '">' + cells + "</row>";
+            const level = f.levels && f.levels[r] ? ' outlineLevel="' + f.levels[r] + '"' : "";   /* 4.4: weeks grouped under their month */
+            return '<row r="' + (r + 1) + '"' + level + ">" + cells + "</row>";
         }).join("");
+        const grouped = f.levels && f.levels.some(Boolean);
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
             '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+            (grouped ? '<sheetPr><outlinePr summaryBelow="0"/></sheetPr><sheetFormatPr defaultRowHeight="15" outlineLevelRow="1"/>' : "") +
             (cols ? "<cols>" + cols + "</cols>" : "") + "<sheetData>" + rows + "</sheetData></worksheet>";
     }
 
@@ -148,7 +152,7 @@ const Xlsx = (() => {
 
     function create(sheets) {
         const cleanNames = sheets.map((f, i) =>
-            (String(f.name || "Sheet" + (i + 1)).replace(/[\\\/\?\*\[\]:]/g, " ").slice(0, 31)) || "Sheet" + (i + 1));
+            (String(f.name || "Sheet" + (i + 1)).replace(/[\\/?*[\]:]/g, " ").slice(0, 31)) || "Sheet" + (i + 1));
         const parts = [
             { name: "[Content_Types].xml", content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
                 '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
@@ -180,5 +184,5 @@ const Xlsx = (() => {
         return zip(parts);
     }
 
-    return { create, crc32, column };
+    return { create, column };
 })();

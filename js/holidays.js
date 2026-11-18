@@ -47,11 +47,21 @@ const Holidays = (() => {
         ];
     }
 
+    /* Name of each holiday of list(), same order (2.9: shown in the calendar) */
+    const NAMES = ["hol.newYear", "hol.easterMonday", "hol.labour", "hol.victory", "hol.ascension", "hol.whitMonday",
+        "hol.bastille", "hol.assumption", "hol.allSaints", "hol.armistice", "hol.christmas"];
+
+    /* Translated name of the holiday, or "" when the date is not one */
+    function name(date) {
+        const i = list(date.getUTCFullYear()).findIndex(f => f.getUTCMonth() === date.getUTCMonth() && f.getUTCDate() === date.getUTCDate());
+        return i < 0 ? "" : I18n.t(NAMES[i]);
+    }
+
     /* True if the (UTC) date is a French public holiday */
     function isHoliday(date) {
         return list(date.getUTCFullYear()).some(f =>
             f.getUTCMonth() === date.getUTCMonth() && f.getUTCDate() === date.getUTCDate());
     }
 
-    return { list, isHoliday };
+    return { list, isHoliday, name };
 })();

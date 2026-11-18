@@ -25,6 +25,7 @@ const Segments = (() => {
         { key: "work", color: "#16A34A", client: true },
         { key: "travel", color: "#2563EB", client: true },
         { key: "meeting", color: "#7E22CE", client: true },
+        { key: "training", color: "#DB2777", client: false },   /* 4.5: training (decision of 17/11/2026) — working time */
         { key: "break", color: "#EA580C", client: false },
         { key: "lunch", color: "#B45309", client: false },
         { key: "other", color: "#475569", client: true },

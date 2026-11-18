@@ -13,12 +13,18 @@ eq([alex,damien,enrique,yann,jer].map(u=>S.user(u).clockRequired),[true,true,fal
 eq(S.sections().map(x=>x.name),["Nord","Sud"],"two initial sections");
 // ---- default permissions per profile (part 3, 19.1)
 const can=(u,p)=>P.has(u,p);
-eq(["clock.own","timesheet.own","leave.request","leave.balance.view","timesheet.correct.request"].every(p=>can(alex,p)),true,"technician rights");
-eq(["timesheet.team.view","leave.review","leave.approve","users.manage","settings.manage","permissions.manage","audit.view"].some(p=>can(alex,p)),false,"technician: no team/admin rights");
-eq(["timesheet.team.view","leave.review","team.view","reports.view","permissions.request"].every(p=>can(enrique,p)),true,"team lead rights");
-eq(["leave.approve","settings.manage","users.manage","permissions.manage","clock.own"].some(p=>can(enrique,p)),false,"team lead: no final approval, no settings, no self rights, no clocking by default");
-eq(P.ALL.filter(p=>p!=="clock.own").every(p=>can(yann,p)&&can(jer,p)),true,"both managers have exactly the same full rights");
-eq([can(yann,"clock.own"),can(jer,"clock.own")],[false,false],"managers do not clock by default (activable per account)");
+eq(P.effective(alex).map(x=>x.permission).sort(),["leave.self.request","leave.self.view","reports.self.view","timeclock.report_issue","timeclock.self"],"technician: exactly his personal rights");
+eq(["timeclock.team.view","leave.team.review","leave.global.approve","employees.manage","settings.manage","permissions.manage","audit.view"].some(p=>can(alex,p)),false,"technician: no team/admin rights");
+eq(["timeclock.team.view","leave.team.review","employees.team.view","reports.team.view","permissions.request"].every(p=>can(enrique,p)),true,"team lead rights");
+eq(["leave.global.approve","settings.manage","employees.manage","permissions.manage","timeclock.self"].some(p=>can(enrique,p)),false,"team lead: no final approval, no settings, no self rights, no clocking by default");
+// quality manager vs director (06/11/2026): distinct profiles, shared administration
+const common=["employees.manage","permissions.manage","permissions.request","employees.global.view","timeclock.global.view","leave.global.view","leave.global.approve","reports.global.view","reports.export","audit.view"];
+eq(common.every(p=>can(yann,p)&&can(jer,p)),true,"both: accounts, rights, global view, final leave decision, exports, audit");
+eq(["timeclock.correction.approve","settings.manage","backups.manage","leave.balance.manage","absence.sensitive.view"].map(p=>[can(yann,p),can(jer,p)]),
+   [[true,true],[true,true],[true,true],[true,true],[true,true]],"4.1.6: both managers — corrections, settings, backups, leave counters, sensitive absences");
+eq([can(jer,"timeclock.correction.audit"),can(jer,"settings.view")],[true,true],"director: reviews corrections, views settings");
+eq(P.ALL.some(p=>p.startsWith("payroll.")),false,"no payroll.* rights (no payroll module, decision of 06/11/2026)");
+eq([can(yann,"timeclock.self"),can(jer,"timeclock.self")],[false,false],"managers do not clock by default (activable per account)");
 // ---- perimeter (part 3.1, 3.5)
 eq([P.canSeeUser(alex,damien),P.canSeeUser(alex,alex)],[false,true],"a technician never sees another employee's data");
 eq([P.canSeeUser(enrique,alex),P.canSeeUser(enrique,damien),P.canSeeUser(yann,alex)],[true,true,true],"team lead sees Nord and Sud; managers see all");
@@ -29,25 +35,25 @@ S.setCurrentUser(yann);S.updateUser(enrique,{sectionIds:["sec-nord","sec-sud"]})
 S.setCurrentUser(enrique);
 eq(S.updateOrg({weeklyBase:30}),false,"team lead cannot change the settings");
 eq(S.updateUser(enrique,{role:"admin"}),false,"no self-escalation");
-eq(S.grant({userId:enrique,permission:"leave.approve",kind:"permanent"}),null,"cannot grant rights");
+eq(S.grant({userId:enrique,permission:"leave.global.approve",kind:"permanent"}),null,"cannot grant rights");
 eq(S.addUser({name:"Pirate"}),null,"cannot create accounts");
 // ---- access request: temporary, approved, expires by itself (part 5)
-eq(S.requestAccess({permission:"leave.approve",kind:"temporary",reason:"",end:"2026-11-20"}),"reasonRequired","reason mandatory");
-const r1=S.requestAccess({permission:"leave.approve",kind:"temporary",reason:"Yann en congé",start:"2026-11-05",end:"2026-11-10"});
+eq(S.requestAccess({permission:"leave.global.approve",kind:"temporary",reason:"",end:"2026-11-20"}),"reasonRequired","reason mandatory");
+const r1=S.requestAccess({permission:"leave.global.approve",kind:"temporary",reason:"Yann on leave",start:"2026-11-05",end:"2026-11-10"});
 eq(r1.status,"pending","temporary request pending");
 eq(S.decideAccess(r1.id,"approved",{}),"forbidden","requester cannot decide (no permissions.manage)");
 S.setCurrentUser(yann);
 eq(S.decideAccess(r1.id,"approved",{end:"2026-11-08"}),"commentRequired","a different duration must be explained");
-eq(S.decideAccess(r1.id,"approved",{end:"2026-11-08",comment:"jusqu'à mon retour"}),true,"approved with a shorter duration");
+eq(S.decideAccess(r1.id,"approved",{end:"2026-11-08",comment:"until I am back"}),true,"approved with a shorter duration");
 const RealDate=Date;
 const at=iso=>{const t=new RealDate(iso+"T12:00:00").getTime();return t;};
-eq(P.has(enrique,"leave.approve",'2026-11-07'),true,"right in force during the period");
-eq(P.has(enrique,"leave.approve",'2026-11-09'),false,"right expired after the end date (checked at every call)");
-eq(P.has(enrique,"leave.approve",'2026-11-04'),false,"not before the start date");
+eq(P.has(enrique,"leave.global.approve",'2026-11-07'),true,"right in force during the period");
+eq(P.has(enrique,"leave.global.approve",'2026-11-09'),false,"right expired after the end date (checked at every call)");
+eq(P.has(enrique,"leave.global.approve",'2026-11-04'),false,"not before the start date");
 // expiry derived when the app was closed for days: fake "today"
 {const realNow=Date.now;Date.now=()=>at("2026-11-12");
  eq(S.accessRequests().find(x=>x.id===r1.id).status,"expired","status 'expired' derived on read, app closed for days");
- eq(P.has(enrique,"leave.approve"),false,"no right on 12/11");Date.now=realNow;}
+ eq(P.has(enrique,"leave.global.approve"),false,"no right on 12/11");Date.now=realNow;}
 // ---- permanent request, refused, details asked, own request
 S.setCurrentUser(enrique);const r2=S.requestAccess({permission:"reports.export",kind:"permanent",reason:"exports mensuels"});
 S.setCurrentUser(jer);eq(S.decideAccess(r2.id,"rejected",{}),"commentRequired","a refusal needs a comment");
@@ -56,15 +62,15 @@ S.setCurrentUser(enrique);eq(S.answerAccess(r2.id,"rapports mensuels Nord et Sud
 S.setCurrentUser(jer);eq(S.decideAccess(r2.id,"approved",{}),true,"permanent access approved");
 eq(P.has(enrique,"reports.export"),true,"an approved request really changes the rights");
 // revoke
-const g=S.grants().find(x=>x.requestId===r2.id);eq(S.revokeGrant(g.id,"plus nécessaire"),true,"revoked");
+const g=S.grants().find(x=>x.requestId===r2.id);eq(S.revokeGrant(g.id,"no longer needed"),true,"revoked");
 eq([P.has(enrique,"reports.export"),S.accessRequests().find(x=>x.id===r2.id).status],[false,"revoked"],"revocation removes the right, status 'revoked'");
 // self-approval: a manager cannot approve their own request (simulate a request by Jérémie via a temporarily reduced profile)
 S.setCurrentUser(jer);eq(S.requestAccess({permission:"audit.view",kind:"permanent",reason:"x"}),"alreadyGranted","nothing to request when already granted");
 S.setCurrentUser(yann);const tmp=S.addUser({name:"Chef Test",role:"team_lead",sectionIds:["sec-sud"]});
-S.setCurrentUser(tmp.id);const r3=S.requestAccess({permission:"leave.approve",kind:"permanent",reason:"test"});
+S.setCurrentUser(tmp.id);const r3=S.requestAccess({permission:"leave.global.approve",kind:"permanent",reason:"test"});
 S.setCurrentUser(yann);S.grant({userId:tmp.id,permission:"permissions.manage",kind:"permanent",reason:"test"});
 S.setCurrentUser(tmp.id);eq(S.decideAccess(r3.id,"approved",{}),"ownRequest","nobody approves their own request");
-eq(S.grant({userId:tmp.id,permission:"leave.approve",kind:"permanent"}),null,"nobody grants rights to themselves");
+eq(S.grant({userId:tmp.id,permission:"leave.global.approve",kind:"permanent"}),null,"nobody grants rights to themselves");
 // ---- safeguards on accounts
 S.setCurrentUser(yann);
 eq(S.updateUser(jer,{accountStatus:"disabled"}),true,"a manager can disable the other one");
@@ -73,11 +79,11 @@ S.setCurrentUser("");eq(S.updateUser(yann,{role:"technician"}),false,"never zero
 S.setCurrentUser(yann);S.updateUser(jer,{accountStatus:"active"});
 eq(await A.signIn(jer,"x"),false,"(no password yet)");
 // clocking can be activated account by account
-eq(S.grant({userId:enrique,permission:"clock.own",kind:"permanent",reason:"pointe en intervention"})!==null&&P.has(enrique,"clock.own"),true,"clocking activated for one account");
+eq(S.grant({userId:enrique,permission:"timeclock.self",kind:"permanent",reason:"pointe en intervention"})!==null&&P.has(enrique,"timeclock.self"),true,"clocking activated for one account");
 // ---- audit trail (part 12)
 const acts=new Set(S.auditTrail().map(a=>a.action));
 eq(["access.requested","access.decided","access.answered","permission.granted","permission.revoked","user.created","user.statusChanged","user.updated"].every(a=>acts.has(a)),true,"every important action traced");
-const ad=S.auditTrail().find(a=>a.action==="access.decided"&&a.reason==="jusqu'à mon retour");eq([ad.by,ad.before.status,ad.after.status,!!ad.at],[yann,"pending","approved",true],"who, when, before, after, reason");
+const ad=S.auditTrail().find(a=>a.action==="access.decided"&&a.reason==="until I am back");eq([ad.by,ad.before.status,ad.after.status,!!ad.at],[yann,"pending","approved",true],"who, when, before, after, reason");
 // ---- notifications (part 16)
 S.setCurrentUser(enrique);eq(S.notifications().some(n=>n.type==="permission.granted"),true,"requester notified in the app");
 S.setCurrentUser(yann);eq(S.notifications().some(n=>n.type==="access.requested"),true,"managers notified of access requests");
@@ -86,10 +92,10 @@ eq(S.verify(),[],"integrity check: sound");
 S.setCurrentUser(alex);eq(S.exportAll(),null,"technician cannot export everything");
 S.setCurrentUser(yann);const full=S.exportAll();const nUsers=S.users().length;
 eq(JSON.parse(full).kind,"full","full export");
-S.setCurrentUser(yann);S.addUser({name:"Après Export"});
+S.setCurrentUser(yann);S.addUser({name:"After Export"});
 eq(S.inspectFull("{bad").error,"notJson","bad file refused");eq(S.inspectFull('{"kind":"account"}').error,"notFull","per-account file refused here");
 const res=S.importAll(full);eq(res.ok,true,"restore");eq(S.users().length,nUsers,"data back to the export");
-eq(mem[res.backupKey]!==undefined&&JSON.parse(mem[res.backupKey]).users.some(u=>u.name==="Après Export"),true,"current data saved (verified) before restoring");
+eq(mem[res.backupKey]!==undefined&&JSON.parse(mem[res.backupKey]).users.some(u=>u.name==="After Export"),true,"current data saved (verified) before restoring");
 eq(S.auditTrail().some(a=>a.action==="backup.restored"),true,"restore traced");
 // ---- storage adapter is the only door
 eq(typeof SA.get==="function"&&SA.NAME,"local-browser","local adapter");
@@ -102,12 +108,12 @@ eq(typeof SA.get==="function"&&SA.NAME,"local-browser","local adapter");
          {id:"u5",name:"Jérémie Augé",role:"admin",pinHash:"h5",active:true}],
   clients:[{id:"c1",name:"Usine",city:"",lines:[]}],
   perUser:{u1:{settings:{vibration:false},entries:[{id:"e1",category:"work",start:1,end:3600001},{id:"e2",category:"lunch",start:3600001,end:7200001}],
-               requests:[{id:"r1",type:"time_off",startDate:"2026-10-22",endDate:"2026-10-23",status:"approved",decidedBy:"Jérémie Augé"}]},
+               requests:[{id:"r1",type:"time_off",startDate:"2026-10-22",endDate:"2026-10-23",status:"approved",decidedBy:"Jérémie Augé",decidedAt:"2026-10-20T09:00:00.000Z"}]},
            u2:{entries:[],requests:[]},u3:{entries:[],requests:[]},u4:{entries:[],requests:[]},u5:{entries:[],requests:[]}}};
  const raw=JSON.stringify(v3);
  const {M:M2,mem:m2}=load({acp_data_v3:raw});const S2=M2.Store;S2.load();
  eq(m2.acp_data_v3,raw,"v3 key left intact");
- const bk=Object.keys(m2).find(k=>k.startsWith("acp_backup_before_v4_"));eq(m2[bk],raw,"verified copy of the v3 data");
+ const bk=Object.keys(m2).find(k=>k.startsWith("acp_backup_before_v5_"));eq(m2[bk],raw,"verified copy of the v3 data");
  const u=n=>S2.users().find(x=>x.name===n);
  eq([u("Enrique Soler").role,!!u("Yann Lefloc'h"),u("Yann Lefloc'h").id,u("Damien Morvan").accountStatus],["team_lead",true,"u4","disabled"],"Enrique → team lead, Yann renamed (same id), disabled account kept disabled");
  eq([u("Alexandre Machado").pinHash,u("Jérémie Augé").pinHash,u("Alexandre Machado").jobTitle],["h1","h5","Technicien sertisseur"],"passwords and own job title kept");
@@ -115,4 +121,26 @@ eq(typeof SA.get==="function"&&SA.NAME,"local-browser","local adapter");
  eq([S2.org().leaveDaysPerMonth,"leaveDaysPerYear" in S2.org()],[2.5,false],"leave rule converted to 2.5 days/month");
  eq([S2.migrationReport().from,S2.migrationReport().backupVerified,S2.verify()],[3,true,[]],"report: from v3, backup verified, integrity sound");
  eq(S2.auditTrail().filter(a=>a.action==="user.migrated").length>=3,true,"every changed account traced");}
+// ---- migration v4 (data of 2.8.0-beta.4) → v5: roles split, rights renamed, nothing lost
+{const v4={version:4,deviceId:"dev-x",org:{weeklyBase:39,leaveDaysPerMonth:2.5,rulesVersion:28},
+  sections:[{id:"sec-nord",name:"Nord"},{id:"sec-sud",name:"Sud"}],
+  users:[{id:"u1",name:"Alexandre Machado",role:"technician",sectionIds:["sec-sud"],clockRequired:true,accountStatus:"active",pinHash:"h1"},
+         {id:"u3",name:"Enrique Soler",role:"team_lead",sectionIds:["sec-nord","sec-sud"],accountStatus:"active",pinHash:"h3"},
+         {id:"u4",name:"Yann Lefloc'h",role:"admin",allSections:true,accountStatus:"active",pinHash:"h4"},
+         {id:"u5",name:"Jérémie Augé",role:"admin",allSections:true,accountStatus:"active",pinHash:"h5"},
+         {id:"u6",name:"Autre Admin",role:"admin",allSections:true,accountStatus:"active"}],
+  clients:[],perUser:{u1:{entries:[{id:"e1",category:"work",start:1,end:3600001}],requests:[]},u3:{entries:[],requests:[]},u4:{entries:[],requests:[]},u5:{entries:[],requests:[]},u6:{entries:[],requests:[]}},
+  grants:[{id:"g1",userId:"u3",permission:"clock.own",kind:"permanent",start:"2026-11-01",end:"",grantedBy:"u4",revokedAt:null}],
+  accessRequests:[{id:"a1",userId:"u3",permission:"leave.approve",kind:"temporary",reason:"x",requestedAt:"2026-11-05T10:00:00Z",start:"2026-11-05",end:"2026-11-20",status:"pending",exchanges:[]}],
+  correctionRequests:[],leaveMovements:[],audit:[],notifications:[]};
+ const raw=JSON.stringify(v4);const {M:M4,mem:m4}=load({acp_data_v4:raw});const S4=M4.Store,P4=M4.Permissions;S4.load();
+ eq(m4.acp_data_v4,raw,"v4 key left intact");
+ eq(m4[Object.keys(m4).find(k=>k.startsWith("acp_backup_before_v5_"))],raw,"verified copy of the v4 data before migrating");
+ const role=id=>S4.user(id).role;eq([role("u1"),role("u3"),role("u4"),role("u5"),role("u6")],["technician","team_lead","quality","director","quality"],"roles: Yann quality, Jérémie director, other admin → quality");
+ eq([S4.grants()[0].permission,P4.has("u3","timeclock.self")],["timeclock.self",true],"Enrique keeps his clocking right (renamed grant)");
+ eq(S4.accessRequests()[0].permission,"leave.global.approve","pending access request renamed");
+ eq([S4.user("u4").pinHash,S4.user("u5").pinHash],["h4","h5"],"passwords kept");
+ S4.setCurrentUser("u1");eq(S4.entries().length,1,"entries kept");S4.setCurrentUser("");
+ eq([S4.migrationReport().from,S4.migrationReport().backupVerified,S4.verify()],[4,true,[]],"report: from v4, backup verified, sound");
+ eq(S4.auditTrail().filter(a=>a.action==="user.roleChanged").length,3,"each role change traced");}
 console.log("OK",ok,"KO",ko);})();

@@ -88,6 +88,32 @@ const Utils = (() => {
         return new Date(ms).toLocaleString(I18n.locale());
     }
 
+    /* 2.5 → "2,5 j" (leave days, rounded to the hundredth) */
+    function days(n) {
+        return (Math.round(n * 100) / 100).toLocaleString(I18n.locale()) + " " + I18n.t("common.daysShort");
+    }
+
+    /* Prints (or saves as PDF) a whole HTML document in an invisible frame */
+    function printHtml(html) {
+        const old = document.getElementById("printFrame");
+        if (old) old.remove();
+        const frame = document.createElement("iframe");
+        frame.id = "printFrame";
+        frame.setAttribute("aria-hidden", "true");
+        frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+        document.body.appendChild(frame);
+        const doc = frame.contentWindow.document;
+        doc.open(); doc.write(html); doc.close();
+        const go = () => { try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch (e) { alert(I18n.t("export.printFailed")); } };
+        /* 4.4: the logo and the fonts of the report must be loaded before printing (3 s at most) */
+        const waits = [].slice.call(doc.images).filter(i => !i.complete).map(i => new Promise(r => { i.onload = i.onerror = r; }));
+        if (doc.fonts && doc.fonts.ready) waits.push(doc.fonts.ready);
+        let done = false;
+        const once = () => { if (!done) { done = true; setTimeout(go, 100); } };
+        Promise.all(waits).then(once, once);
+        setTimeout(once, 3000);
+    }
+
     function escape(text) {
         return String(text == null ? "" : text)
             .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -207,7 +233,7 @@ const Utils = (() => {
 
     return {
         pad, isoLocal, localDate, utcDate, addDays, timestamp,
-        hm, hours, stopwatch, clock, dateDmy, dayName, longDate, monthName, dateTime,
-        escape, simplify, uid, download, readText, parseCsv, csvField, toCsv, parseDate, parseTime, vibrate
+        hm, hours, stopwatch, clock, dateDmy, dayName, longDate, monthName, dateTime, days, printHtml,
+        escape, simplify, uid, download, readText, parseCsv, toCsv, parseDate, parseTime, vibrate
     };
 })();

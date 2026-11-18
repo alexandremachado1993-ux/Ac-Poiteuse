@@ -1,76 +1,81 @@
-# AC Conger Payer + pointage — version 2.8.0-beta.4 (intermédiaire)
+# My Time Keeper (formerly AC Conger Payer + pointage) — version 4.7.1
 
-Pointage, feuilles de temps, congés et absences pour les techniciens itinérants (SAT France).
-Application **locale** : HTML / CSS / JavaScript, **aucune bibliothèque**, **aucun serveur**, fonctionne hors ligne.
-Interface en **français, anglais, espagnol et allemand**.
+Clocking, timesheets, leave and absences for itinerant service technicians (SAT France, Auxiliar Conservera).
+**Local** application: HTML / CSS / JavaScript, **no library**, **no server**, works offline.
+Interface in **French, English, Spanish and German**. Source code, comments and documentation in English.
 
-> **Version intermédiaire** de la mission de consolidation (« V2.7 », numérotée 2.8).
-> Ce qui est fait, ce qui reste à faire et les paramètres à confirmer : `CHANGELOG_V2.7.md`.
+> History of the versions, decisions and open points: `CHANGELOG.md`.
 
-## Lancer l'application sur l'ordinateur (rien à installer)
+## Run the app on a computer (nothing to install)
 
-1. Décompresser le ZIP dans un dossier.
-2. **Double-cliquer sur `index.html`**, ou l'ouvrir dans **Chrome** ou **Edge** (vérifié dans Chromium).
-3. Choisir son nom, puis son mot de passe à la première connexion (6 caractères minimum).
+1. Unzip the archive into a folder.
+2. **Double-click `index.html`**, or open it in **Chrome** or **Edge** (checked in Chromium).
+3. Choose your name, then your password at the first sign-in (6 characters minimum).
 
-Les données restent **dans ce navigateur, sur cet ordinateur**. Changer de navigateur ou effacer les données de
-navigation fait perdre l'accès aux données : **exporter régulièrement une sauvegarde complète**
-(Paramètres → Sauvegarde, avec un compte responsable).
+The data stays **in this browser, on this computer**. Changing browser or clearing the browsing data loses access to
+the data: **export a full backup regularly** (Settings → Backup, with a manager account).
 
-Facultatif — installation en application (PWA, mode hors ligne complet, téléphone) : servir le dossier par un
-serveur local (par exemple l'extension « Live Server » de VS Code), puis ouvrir `http://localhost:…`.
+Optional — installation as an app (PWA, full offline mode, phone): serve the folder with a web server (for example the
+"Live Server" extension of VS Code, or any static hosting), then open `http://…/index.html`.
 
-## Mise à jour depuis une version précédente
+## Updating from a previous version
 
-Ouvrir la nouvelle version dans **le même navigateur, au même emplacement** : les données sont converties
-automatiquement (v1, v2, v3 → v4), avec une copie de sécurité vérifiée ; les anciennes données ne sont jamais
-réécrites. En cas de doute : exporter une sauvegarde complète **avant** la mise à jour.
-À chaque déploiement, augmenter `CACHE_VERSION` dans `sw.js` (`acp-v20` → `acp-v21`…).
+Open the new version **in the same browser, at the same location**: the data is converted automatically, with a
+verified safety copy; the old data is never rewritten. When in doubt: export a full backup **before** updating.
+On every deployment, increase `CACHE_VERSION` in `sw.js` (`acp-v54` → `acp-v55`…), otherwise the devices keep the old
+files.
 
-## Comptes de référence
+## Reference accounts
 
-| Compte | Fonction | Rôle | Sections | Pointage |
+| Account | Job title | Role | Sections | Clocking |
 |---|---|---|---|---|
-| Alexandre Machado | Technicien | technicien | Sud | obligatoire |
-| Damien Morvan | Technicien | technicien | Nord | obligatoire |
-| Enrique Soler | Chef d'équipe | chef d'équipe | Nord + Sud | non (activable) |
-| Yann Lefloc'h | Responsable Qualité | administrateur | toutes | non (activable) |
-| Jérémie Augé | Responsable Commercial France & PDG | administrateur | toutes | non (activable) |
+| Alexandre Machado | Technicien | technician | Sud | mandatory |
+| Damien Morvan | Technicien | technician | Nord | mandatory |
+| Enrique Soler | Chef d'équipe | team lead | Nord + Sud | no (can be turned on) |
+| Yann Lefloc'h | Responsable Qualité | quality manager | all | no (can be turned on) |
+| Jérémie Augé | Responsable Commercial France & PDG | director | all | no (can be turned on) |
 
-Yann et Jérémie ont des droits **identiques** et peuvent administrer le compte de l'autre.
-Les menus et onglets affichés dépendent des **permissions** ; les droits sont aussi revérifiés dans la logique
-métier. Détail des permissions et de leur limite (contrôle local ≠ contrôle serveur) : `ARCHITECTURE.md`.
+Job titles and section names are company data, kept in French. An "IT department" account can be created by a
+manager (accounts, rights and backups, no access to hours or leave).
+Menus and tabs depend on the **permissions**; the rights are also checked again in the business logic. Details of
+the permissions and of their limit (local check ≠ server check): `ARCHITECTURE.md`.
 
-## Fonctions disponibles dans cette version
+## Features
 
-- Pointage : arrivée, pause / reprise, départ ; activités **Travail, Domicile, Réunion, Trajet, Repas** ; client et note.
-  **Domicile** = journée forfaitaire en un appui (7 h + repas, base 35 h). La ligne de production n'est plus demandée au pointage
-  (elle reste dans les clients, les corrections et les exports).
-- Feuille de temps : semaine / mois, journée « pointé − repas = journée », synthèse, compteurs, exports (Excel, PDF,
-  HTML, CSV). **Corrections et imports réservés aux responsables** (depuis Équipe → fiche) : fenêtre unique arrivée /
-  départ / repas, motif obligatoire. Les techniciens **signalent une erreur**.
-- Congés & absences : calendrier collectif (mois, semaine, année), demandes, validation par un responsable,
-  soldes (acquisition 2,5 jours par mois).
-- Tableau de bord : vue personnelle (comptes qui pointent) ou **vue équipe** (chef d'équipe, responsables), limitée aux
-  sections : statut en direct, heures du jour et de la semaine par technicien, demandes et signalements à examiner.
-- Équipe : fiches, rôle, fonction, sections, obligation de pointage, droits effectifs, comptes actifs / désactivés.
-- Rapports : par salarié ou équipe, par période, export Excel et PDF.
-- Paramètres : règles de temps, clients, sections, **droits et demandes d'accès**, **historique** (recherche,
-  filtres, export), **sauvegarde complète** avec vérification sur copie, document de référence.
-- Notifications internes (cloche).
+- Clocking: arrival, break / resume, departure; activities **Work, Home, Meeting, Travel, Meal**; client and note;
+  "Undo" for 10 s; countdown before the night period (21:00); urgent call-out during leave.
+- Timesheet: week / month, day "clocked − meal = day", summary, counters, value of the week like the managers'
+  register, exports (Excel, PDF, HTML, CSV). **Corrections and imports reserved to the managers** (Team → file);
+  technicians **report an error**.
+- Week validation: the technician sends, the team lead validates, quality or director locks; replacements when a
+  manager is away; unlock request.
+- Leave & absences: shared calendar (month, week, year), the first decision among team lead / quality / director is
+  final, notice periods, half days, cancellation, carry-over, absence types, balances (25 days a year, counted Monday →
+  Friday, May → May).
+- Dashboards per profile (technician, team lead, quality manager, director).
+- Team, reports (per employee or several, export Excel and PDF, "to pay" column).
+- Settings: time rules (all editable by the quality manager, each change announced to the technicians), clients,
+  sections, rights and access requests, audit trail, backups (personal / full with preview and strict validation),
+  reference document, **my workspace** (theme, menu on the left or on the right, start page, tab order and visibility,
+  dashboard blocks and widgets moved / hidden / resized by drag and drop — saved for each person), my preferences
+  (reminders, absence for replacements).
+- Internal notifications (bell), clickable to the page concerned.
+- First sign-in presentation; accesses of the app (notifications, protected data, installation); quick sign-in on
+  the device by 4-digit PIN or fingerprint / face (https).
 
-**Pas encore disponible** (prochaines étapes) : validation des congés en deux étapes, décompte en jours ouvrables
-avec journal des mouvements, catégories d'absence et demi-journées, affichage 169 h / temps réel dans les rapports,
-contrôles de pointage avancés, exports de préparation de la paie. Aucune synchronisation entre appareils.
+**Not available**: synchronisation between devices (needs a server), e-mail / SMS, payroll.
 
 ## Documents
 
-| Fichier | Contenu |
+| File | Content |
 |---|---|
-| `CHANGELOG_V2.7.md` | Fait, corrigé, restant à faire, paramètres à confirmer |
-| `ARCHITECTURE.md` | Organisation, profils, permissions, modèle de données, règles, stockage et quotas, migrations, future plateforme |
-| `TESTS_MANUELS.md` | Scénarios à dérouler dans l'interface avec les cinq comptes |
-| `tests/README.md` | Tests automatisés : `node tests/run-all.js` |
+| `CHANGELOG.md` | Versions, decisions, open points |
+| `ARCHITECTURE.md` | Organisation, profiles, permissions, data model, rules, storage and quotas, migrations, future platform, what stays in French |
+| `MANUAL_TESTS.md` | Scenarios to run in the interface with the five accounts |
+| `tests/README.md` | Automated tests: `node tests/run-all.js` |
 
-`netlify.toml` et `robots.txt` ne servent que si le dossier est un jour publié sur un hébergement statique ;
-l'application ne dépend d'aucun service.
+Design 4.0 "Corporate Dark + Soft Premium" (navy, burgundy, light work areas). Icons: Lucide (ISC License,
+`LICENSE-lucide.txt`). Fonts: Inter / Inter Tight (SIL OFL).
+
+`netlify.toml` and `robots.txt` are only used if the folder is published on a static hosting; the app depends on no
+service.

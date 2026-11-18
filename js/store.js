@@ -36,34 +36,51 @@
 const Store = (() => {
     "use strict";
 
-    const KEY = "acp_data_v4";
+    const KEY = "acp_data_v5";
+    const KEY_V4 = "acp_data_v4";
     const KEY_V3 = "acp_data_v3";
     const KEY_V2 = "acp_data_v2";
     const KEY_V1 = "acp_donnees_v1";
     const KEY_UNREADABLE = "acp_data_unreadable";
-    const FORMAT_VERSION = 4;
-    const BACKUP_PREFIX = "acp_backup_before_v4_";   /* copy of the older data, verified before migrating */
+    const FORMAT_VERSION = 5;
+    const BACKUP_PREFIX = "acp_backup_before_v5_";   /* copy of the older data, verified before migrating */
 
     /* PERSONAL settings (each account) */
     const DEFAULT_SETTINGS = {
         forgotReminderTime: "",       /* "HH:MM": reminder if nothing clocked by then ("" = off) */
         reminderDays: [1, 2, 3, 4, 5],
         vibration: true,
-        notifications: false
+        notifications: false,
+        favoriteClients: [],          /* ids of the clients starred by the person (clock screen, 10/11/2026) */
+        startPage: "",                /* 3.0: page opened after sign-in ("" = the first page of the menu) */
+        /* 3.1: display chosen by each person */
+        navOrder: [],                 /* order of the menu tabs (page keys; missing ones keep the default order) */
+        navHidden: [],                /* tabs hidden from the menu (never the dashboard nor the settings) */
+        menuSide: "left",             /* side menu on the "left" or on the "right" (computer); bottom bar on small screens */
+        theme: "auto",                /* "auto" (device) | "light" | "dark" */
+        /* 3.2: arrangement of the dashboard per view ("me", "lead", "quality", "director"):
+           { order: [block ids], hidden: [block ids], sizes: { id: width in twelfths } } — display only (layout.js) */
+        dashLayout: {},
+        introDone: false,             /* 3.3: first sign-in presentation seen (welcome.js) */
+        reportExport: {}              /* 4.4: last choices of the report export window (page-reports.js) */
     };
 
     /* TEAM rules (2.4): set by administrators, the same for every account
        of the device. Read by hours.js, segments.js and reminders.js. */
     const DEFAULT_ORG = {
         weeklyBase: 39,               /* contract: 35 h + 4 h paid at +25 % */
-        dayHours: 39 / 7,             /* value of a day of leave, time off or holiday: 39 h ÷ 7 = 5 h 34 (2.5) */
+        /* 3.0: value of a credited day like the managers' register "OK": 39 h ÷ 5 = 7.8 h,
+           Monday → Friday only (2.5 → 2.9.1: 39 ÷ 7 every day — option creditWeekdaysOnly = false) */
+        dayHours: 7.8,
+        creditWeekdaysOnly: true,
         overtime25From: 39,           /* overtime counter 25 % from the 40th hour… */
         overtime50From: 43,           /* …counter 50 % from the 44th hour */
         nightStart: 21,               /* night period 21:00 → 06:00 */
         nightEnd: 6,
         nightRate: 0.25,              /* premiums added to the total, like the register */
         holidayRate: 0.5,
-        weekendHolidays: true,        /* holidays falling on a Saturday or Sunday are credited too */
+        absenceWorkedRate: 0.5,       /* hours worked on a day of approved leave / time off (urgent call-out, 10/11/2026): the day stays credited and taken */
+        weekendHolidays: false,       /* holidays falling on a Saturday or Sunday credited too? (register "OK": no) */
         countShortBreaks: false,      /* short breaks counted as working time? */
         autoStopTime: "",             /* "HH:MM": automatic stop ("" = off) */
         longTimerAlertH: 10,          /* alert if a timer runs longer than X h (0 = off) */
@@ -73,28 +90,64 @@ const Store = (() => {
         habitualOvertimeHours: 4,     /* habitual overtime INCLUDED in the 39 h */
         habitualOvertimeRate: 0.25,   /* rate of the habitual overtime */
         /* monthly reference = weeklyBase × 52 / 12 = 169 h (computed, see hours.js) */
-        /* ---- Paid leave (2.8): working days "ouvrables" (Monday → Saturday) ---- */
-        leaveDaysPerMonth: 2.5,       /* 2.5 days a month = 30 days a year */
-        leaveAcquisitionStart: "",    /* "MM-DD" start of the acquisition period ("" = since the hire date, no reset) */
+        /* ---- Paid leave ---- */
+        /* 3.1 (12/11/2026): leave counted Monday → Friday ("monFri"; French law: "jours ouvres"),
+           a week = 5 days, 25 days a year (25 ÷ 12 a month) — the legal equivalent of 30 days
+           counted Monday → Saturday. Option "monSat" (jours ouvrables): 2.5 days a month. */
+        leaveDayMode: "monFri",
+        leaveDaysPerMonth: 25 / 12,
+        leaveAcquisitionStart: "05-01", /* "MM-DD" start of the acquisition period, May → May (10/11/2026); "" = since the hire date, no reset */
         leaveCarryOverRule: "",       /* TO CONFIRM (HR): carry-over is not invented; "" = none applied automatically */
         leaveRounding: "none",        /* "none" | "half-up" (round up to the half day): TO CONFIRM */
         leaveHolidaysCounted: false,  /* a public holiday inside a leave period is NOT counted as a leave day */
         rttEnabled: false,            /* no RTT (decision of 04/11/2026); kept as an option */
         /* ---- Home work day (information of 05/11/2026) ---- */
+        homeDayPreset: false,         /* 3.1: false = "Home" is clocked like any activity; true = fixed day declared in one tap */
         homeWorkHours: 7,             /* a home work day counts 7 h, at most (35 h basis) */
         homeDayStart: "08:00",        /* start of the declared day */
         homeLunchMinutes: 60,         /* lunch recorded with the day (not paid) */
         homeReducesHabitual: true,    /* home day on the 35 h basis: the week goal loses (39 − 35) ÷ 5 = 0 h 48 */
-        rulesVersion: 28              /* version of the rule defaults (migration of older values) */
+        /* ---- Clocking safety (10/11/2026) ---- */
+        undoSeconds: 10,              /* "Undo" offered for X s after a clocking action (0 = off) */
+        nightCountdown: true,         /* 10 s countdown before the night period; no answer = departure at nightStart */
+        weekClosureRequired: true,    /* the previous week must be reviewed and SENT before clocking in a new one */
+        /* ---- 3.0: hours computed like the managers' register "OK" (rules 11.1 → 11.8, defaults = register) ---- */
+        hoursMethod: "register",      /* "register" (sheet "OK") | "countdown" (2.9.1: weekly balance carried, credit at 1 h) */
+        overtimeRecoveryRate: 0.25,   /* every hour above the week goal is valued × 1.25 */
+        overtime50InRecovery: false,  /* 11.2: hours above the 43rd valued × 1.5 instead of × 1.25 */
+        negativeWeeks: "zero",        /* 11.3: a week under the goal counts 0 ("zero") or its shortfall is deducted ("carry") */
+        timeOffReducesGoal: false,    /* 11.4: a day of time off lowers the week goal by dayHours */
+        leaveReducesGoal: false,      /* 11.5: a day of paid leave lowers the week goal by dayHours */
+        premiumsBeforeOvertime: true, /* 11.6: night / holiday premiums added to the hours before the × 1.25 */
+        paidOvertimeFromWeek: 22,     /* 11.7: weeks whose overtime is PAID, not banked (0 = none) */
+        paidOvertimeToWeek: 39,
+        sundayRate: 1,                /* 10.7: Sunday hours worked exceptionally, + 100 % (agreement art. 146), separate counter */
+        /* ---- 3.0: leave (decisions of 10/11/2026, open points = proposals) ---- */
+        leaveSingleDecision: true,    /* 10.1: the first decision of the team lead, the quality manager or the director is final */
+        calendarForTechnicians: "none", /* 10.2: "none" | "noReason" | "withReason" */
+        leaveNoticeShort: 2,          /* 1 day of leave → asked 2 days ahead */
+        leaveNoticeMid: 7,            /* 10.4: 2 to 5 days → 1 week ahead */
+        leaveNoticeLong: 14,          /* more than 5 days → 2 weeks ahead */
+        leaveNoticeBlocks: false,     /* 10.5: a late request is only flagged (true = refused) */
+        idleLogoutMinutes: 15,        /* 3.0: automatic sign-out after 15 min without any action (0 = off) */
+        rulesVersion: 31              /* version of the rule defaults (migration of older values) */
     };
     const TEAM_KEYS_IN_SETTINGS = ["countShortBreaks", "autoStopTime", "longTimerAlertH", "breakReminderH"];
+    /* personal-settings keys removed in 2.2 / 2.4: an old personal backup may still hold them; harmless, ignored */
+    const LEGACY_SETTINGS_KEYS = ["premiumInRecovery"].concat(TEAM_KEYS_IN_SETTINGS);
+    /* 3.0: justified absence (sickness…), family event, training; "other" needs a comment.
+       Only paid_leave and time_off move a balance or credit hours. */
+    const REQUEST_TYPES = ["paid_leave", "time_off", "justified", "family_event", "training", "other"];
 
     /* Same fields as a CONGER PAYER user, in English (mapping in README). */
     /* role = permissions; sectionIds / allSections = data perimeter;
        accountStatus and clockRequired are separate (mission part 3.5) */
-    const ROLES = ["technician", "team_lead", "admin"];
+    /* 4 hierarchical roles (06/11/2026); the old "admin" is converted by migrateTo5 */
+    const ROLES = ["technician", "team_lead", "quality", "director", "it_admin"];
     const DEFAULT_USER = { id: "", name: "", jobTitle: "", hireDate: "", entity: "france", role: "technician", language: "", pinHash: "",
-        accountStatus: "active", sectionIds: [], allSections: false, clockRequired: false };
+        accountStatus: "active", sectionIds: [], allSections: false, clockRequired: false, awayFrom: "", awayTo: "",
+        email: "", phone: "", unlockAskedAt: "",
+        leaveDate: "", contracts: [] };   /* 4.5: leaving date; contracts [{ from, weeklyHours, normalHours, workDays }] (hours.js: annual target) */   /* 4.3: contact for the future e-mail / SMS codes; pending unlock request */
 
     /* Initial sections (editable by administrators) */
     const SEED_SECTIONS = [{ id: "sec-nord", name: "Nord" }, { id: "sec-sud", name: "Sud" }];
@@ -105,8 +158,8 @@ const Store = (() => {
         { name: "Alexandre Machado", jobTitle: "Technicien", role: "technician", hireDate: "2026-05-04", sectionIds: ["sec-sud"], clockRequired: true },
         { name: "Damien Morvan", jobTitle: "Technicien", role: "technician", hireDate: "", sectionIds: ["sec-nord"], clockRequired: true },
         { name: "Enrique Soler", jobTitle: "Chef d'équipe", role: "team_lead", hireDate: "", sectionIds: ["sec-nord", "sec-sud"] },
-        { name: "Yann Lefloc'h", jobTitle: "Responsable Qualité", role: "admin", hireDate: "", allSections: true },
-        { name: "Jérémie Augé", jobTitle: "Responsable Commercial France & PDG", role: "admin", hireDate: "", allSections: true }
+        { name: "Yann Lefloc'h", jobTitle: "Responsable Qualité", role: "quality", hireDate: "", allSections: true },
+        { name: "Jérémie Augé", jobTitle: "Responsable Commercial France & PDG", role: "director", hireDate: "", allSections: true }
     ];
 
     let data = null;
@@ -121,25 +174,26 @@ const Store = (() => {
     const nameKey = n => Utils.simplify(n).replace(/[^a-z]/g, "");
 
     function emptyUserData() {
-        return { settings: Object.assign({}, DEFAULT_SETTINGS), entries: [], requests: [], lastBackupAt: null };
+        return { settings: Object.assign({}, DEFAULT_SETTINGS), entries: [], requests: [], lastBackupAt: null, lastImport: null };
     }
 
     function empty() {
         return { version: FORMAT_VERSION, deviceId: Utils.uid("dev"), org: Object.assign({}, DEFAULT_ORG),
             sections: SEED_SECTIONS.map(x => Object.assign({}, x)), users: [], clients: [], perUser: {},
-            grants: [], accessRequests: [], correctionRequests: [], leaveMovements: [], audit: [], notifications: [] };
+            grants: [], accessRequests: [], correctionRequests: [], leaveMovements: [], audit: [], notifications: [], weekValidations: [] };
     }
 
-    const COLLECTIONS = ["grants", "accessRequests", "correctionRequests", "leaveMovements", "audit", "notifications"];
+    const COLLECTIONS = ["grants", "accessRequests", "correctionRequests", "leaveMovements", "audit", "notifications", "weekValidations"];
 
     /* User from any version: "active" (≤ 2.7) becomes accountStatus; old roles kept */
     function normaliseUser(x) {
         const u = Object.assign({}, DEFAULT_USER, x);
         if ("active" in u) { if (!x.accountStatus) u.accountStatus = u.active === false ? "disabled" : "active"; delete u.active; }
-        if (ROLES.indexOf(u.role) < 0) u.role = "technician";
+        if (ROLES.indexOf(u.role) < 0 && u.role !== "admin") u.role = "technician";   /* "admin": converted by migrateTo5 */
         u.sectionIds = Array.isArray(u.sectionIds) ? u.sectionIds : [];
         u.allSections = !!u.allSections;
         u.clockRequired = !!u.clockRequired;
+        u.contracts = Array.isArray(x.contracts) ? x.contracts : [];   /* 4.5: never the shared default array */
         return u;
     }
 
@@ -151,8 +205,11 @@ const Store = (() => {
         return {
             settings,
             entries: raw && Array.isArray(raw.entries) ? raw.entries : [],
-            requests: raw && Array.isArray(raw.requests) ? raw.requests : [],
-            lastBackupAt: (raw && raw.lastBackupAt) || null
+            /* leave circuit (06/11/2026): the former "pending" becomes "waiting for the team lead" */
+            requests: raw && Array.isArray(raw.requests) ? raw.requests.map(r => Object.assign({ history: [] }, r,
+                r.status === "pending" ? { status: "pending_lead" } : {})) : [],
+            lastBackupAt: (raw && raw.lastBackupAt) || null,
+            lastImport: raw && raw.lastImport && typeof raw.lastImport === "object" ? raw.lastImport : null   /* 4.5.1: last Excel register import */
         };
     }
 
@@ -173,9 +230,26 @@ const Store = (() => {
         if (raw.org && !raw.org.rulesVersion) {
             if ("saturdayHolidayReduces" in raw.org) out.org.weekendHolidays = raw.org.saturdayHolidayReduces !== false;
             if (Math.abs((raw.org.dayHours || 0) - 7.8) < 1e-9) out.org.dayHours = 39 / 7;
-            out.org.rulesVersion = DEFAULT_ORG.rulesVersion;
+            out.org.rulesVersion = 28;
+        }
+        /* 3.0: the managers' register "OK" becomes the reference — the old DEFAULTS move
+           (a value changed by a manager is kept); every new rule takes its default */
+        if (raw.org && (Number(out.org.rulesVersion) || 0) < 30) {
+            if (Math.abs(out.org.dayHours - 39 / 7) < 1e-9) out.org.dayHours = 7.8;
+            if (raw.org.weekendHolidays === true || !("weekendHolidays" in raw.org)) out.org.weekendHolidays = false;
+            if (!raw.org.leaveAcquisitionStart) out.org.leaveAcquisitionStart = "05-01";
+            out.org.rulesVersion = 30;
+        }
+        /* 3.1: leave counted Monday → Friday — the old default 2.5 becomes 25 ÷ 12 (same 5 weeks a year) */
+        if (raw.org && (Number(out.org.rulesVersion) || 0) < 31) {
+            if (!("leaveDayMode" in raw.org) && Math.abs((Number(raw.org.leaveDaysPerMonth) || 2.5) - 2.5) < 1e-9) out.org.leaveDaysPerMonth = 25 / 12;
+            else if (!("leaveDayMode" in raw.org)) out.org.leaveDayMode = "monSat";   /* a custom rate keeps the old counting */
+            out.org.rulesVersion = 31;
         }
         delete out.org.saturdayHolidayReduces;
+        /* 3.2: English values of the leave counting (3.1 stored the French words) */
+        if (out.org.leaveDayMode === "ouvres") out.org.leaveDayMode = "monFri";
+        if (out.org.leaveDayMode === "ouvrables") out.org.leaveDayMode = "monSat";
         if (!raw.org) {
             const withRules = out.users.map(x => (pu[x.id] || {}).settings).find(st => st && TEAM_KEYS_IN_SETTINGS.some(k => k in st));
             if (withRules) TEAM_KEYS_IN_SETTINGS.forEach(k => { if (k in withRules) out.org[k] = withRules[k]; });
@@ -263,7 +337,7 @@ const Store = (() => {
     /* ---------------- Migration to version 4 (2.8) ----------------
        Applies the reference organisation of the mission to the existing
        accounts (roles, sections, clocking obligation, job titles), converts
-       the leave rule to "ouvrables", and records everything in the audit. */
+       the leave rule to Monday → Saturday counting, and records everything in the audit. */
     function migrateTo4(v3, from) {
         const out = normalise(v3);
         const anomalies = [];
@@ -288,8 +362,8 @@ const Store = (() => {
                 if (!u.jobTitle) u.jobTitle = seed.jobTitle;
             } else {
                 if (u.role === "technician") u.clockRequired = true;
-                if (u.role === "admin") u.allSections = true;
-                if (u.role !== "admin" && !u.sectionIds.length) anomalies.push("no section: " + u.name);
+                if (u.role === "admin" || u.role === "quality" || u.role === "director") u.allSections = true;
+                if (!u.allSections && !u.sectionIds.length) anomalies.push("no section: " + u.name);
             }
             const after = { name: u.name, role: u.role, sectionIds: u.sectionIds, allSections: u.allSections, clockRequired: u.clockRequired, jobTitle: u.jobTitle };
             if (JSON.stringify(before) !== JSON.stringify(after)) changes.push({ userId: u.id, before, after });
@@ -302,31 +376,40 @@ const Store = (() => {
         return out;
     }
 
-    /* Integrity check: returns a list of anomaly codes (empty = sound) */
-    function verify(d) {
-        const x = d || data;
-        const out = [];
-        const ids = new Set();
-        const sections = new Set((x.sections || []).map(sec => sec.id));
-        (x.users || []).forEach(u => {
-            if (!u.id || !u.name) out.push("user.incomplete");
-            if (ids.has(u.id)) out.push("user.duplicateId:" + u.id);
-            ids.add(u.id);
-            if (!x.perUser || !x.perUser[u.id]) out.push("user.noData:" + u.name);
-            if (ROLES.indexOf(u.role) < 0) out.push("user.badRole:" + u.name);
-            (u.sectionIds || []).forEach(sid => { if (!sections.has(sid)) out.push("user.unknownSection:" + u.name); });
+    /* ---------------- Migration to version 5 (06/11/2026) ----------------
+       Splits the old "admin" role into "quality" (quality manager: control,
+       corrections, operational administration) and "director" (CEO / sales manager
+       France: steering). Converts permission names in grants and access requests to
+       the new matrix. Every change is traced in the audit trail. */
+    function migrateTo5(v4, from) {
+        const out = normalise(v4);
+        const changes = [];
+        const directorIndex = SEED_USERS.findIndex(x => x.role === "director");
+        out.users.forEach(u => {
+            if (u.role !== "admin") return;
+            const before = u.role;
+            u.role = isSeed(u, directorIndex) ? "director" : "quality";
+            u.allSections = true;
+            changes.push({ userId: u.id, before, after: u.role });
         });
-        Object.keys(x.perUser || {}).forEach(id => {
-            if (!ids.has(id)) out.push("data.orphan:" + id);
-            const pu = x.perUser[id];
-            (pu.entries || []).forEach(e => {
-                if (!e.id || typeof e.start !== "number") out.push("entry.invalid:" + (e.id || "?"));
-                else if (e.end != null && e.end < e.start) out.push("entry.endBeforeStart:" + e.id);
-            });
-            (pu.requests || []).forEach(r => { if (!r.startDate || !r.endDate || r.endDate < r.startDate) out.push("request.invalidDates:" + (r.id || "?")); });
-        });
-        if (!(x.users || []).some(u => u.role === "admin" && u.accountStatus !== "disabled")) out.push("users.noActiveAdmin");
+        const rename = p => (typeof Permissions !== "undefined" && Permissions.RENAMED[p]) || p;
+        let renamed = 0;
+        out.grants.forEach(g => { const n = rename(g.permission); if (n !== g.permission) { g.permission = n; renamed += 1; } });
+        out.accessRequests.forEach(r => { const n = rename(r.permission); if (n !== r.permission) { r.permission = n; renamed += 1; } });
+        out.version = FORMAT_VERSION;
+        const at = new Date().toISOString();
+        changes.forEach(c => out.audit.push({ id: Utils.uid("au"), at, by: "", action: "user.roleChanged", target: c.userId,
+            before: { role: c.before }, after: { role: c.after }, reason: "migration v" + from + " → v5" }));
+        out.audit.push({ id: Utils.uid("au"), at, by: "", action: "data.migrated", target: "v" + from, before: null, after: { version: 5 },
+            reason: "roles: " + changes.length + " · permissions renamed: " + renamed });
         return out;
+    }
+
+    /* Integrity check: list of anomaly codes (errors then warnings; empty = sound).
+       The rules live in validation.js, shared with the restore of a backup. */
+    function verify(dd) {
+        const r = Validation.data(dd || data);
+        return r.errors.concat(r.warnings);
     }
 
     /* ---------------- Reading / writing ---------------- */
@@ -350,16 +433,17 @@ const Store = (() => {
             if (raw) {
                 data = normalise(JSON.parse(raw));
             } else {
+                const v4 = StorageAdapter.get(KEY_V4);
                 const v3 = StorageAdapter.get(KEY_V3);
                 const v2 = StorageAdapter.get(KEY_V2);
                 const v1 = StorageAdapter.get(KEY_V1);
-                const rawOld = v3 || v2 || v1;
+                const rawOld = v4 || v3 || v2 || v1;
                 if (rawOld) {
-                    const from = v3 ? 3 : v2 ? 2 : 1;
+                    const from = v4 ? 4 : v3 ? 3 : v2 ? 2 : 1;
                     const backupKey = backupBeforeMigration(rawOld);                      /* 1-2. backup + check */
                     const parsed = JSON.parse(rawOld);
-                    const v3shape = v3 ? parsed : v2 ? migrateV2(parsed) : migrateV2(migrateV1(parsed));
-                    data = migrateTo4(v3shape, from);                                    /* 3. migrate */
+                    const v3shape = v4 || v3 ? parsed : v2 ? migrateV2(parsed) : migrateV2(migrateV1(parsed));
+                    data = migrateTo5(v4 ? parsed : migrateTo4(v3shape, from), from);   /* 3. migrate */
                     seedUsers();
                     const anomalies = verify(data);                                      /* 4. check */
                     if (!backupKey) anomalies.unshift("backup.notVerified");
@@ -461,7 +545,7 @@ const Store = (() => {
 
     /* ---------------- Accounts ---------------- */
 
-    const ROLE_ORDER = { technician: 0, team_lead: 1, admin: 2 };
+    const ROLE_ORDER = { technician: 0, team_lead: 1, quality: 2, director: 3, it_admin: 4 };
 
     function users() {
         return copy(d().users).sort((a, b) => (ROLE_ORDER[a.role] - ROLE_ORDER[b.role]) || a.name.localeCompare(b.name, I18n.locale()));
@@ -485,13 +569,13 @@ const Store = (() => {
 
     /* Returns the new account, or null when the name is empty or already used */
     function addUser(fields) {
-        if (!allowed("users.manage")) return null;
+        if (!allowed("employees.manage")) return null;
         const name = String(fields.name || "").trim();
         if (!name || d().users.some(x => nameKey(x.name) === nameKey(name))) return null;
         const role = ROLES.indexOf(fields.role) >= 0 ? fields.role : "technician";
         const created = normaliseUser({
             id: Utils.uid("us"), name, role, hireDate: fields.hireDate || "", jobTitle: String(fields.jobTitle || "").trim(),
-            sectionIds: Array.isArray(fields.sectionIds) ? fields.sectionIds : [], allSections: role === "admin" || !!fields.allSections,
+            sectionIds: Array.isArray(fields.sectionIds) ? fields.sectionIds : [], allSections: role === "quality" || role === "director" || !!fields.allSections,
             clockRequired: "clockRequired" in fields ? !!fields.clockRequired : role === "technician"
         });
         d().users.push(created);
@@ -501,12 +585,14 @@ const Store = (() => {
         return copy(created);
     }
 
-    const activeAdmins = () => d().users.filter(x => x.role === "admin" && x.accountStatus !== "disabled");
+    /* administrators = accounts holding the account AND rights management (permissions.js) */
+    const activeAdmins = () => d().users.filter(x => x.accountStatus !== "disabled" &&
+        (typeof Permissions === "undefined" ? x.role === "quality" || x.role === "director" : Permissions.isAdministrator(x.id)));
 
     /* Returns true, or false when refused: empty / duplicate name, or the change
        would leave no active administrator (never lock everybody out). */
     function updateUser(id, fields) {
-        if (!allowed("users.manage")) return false;
+        if (!allowed("employees.manage")) return false;
         /* nobody changes their own role, status or perimeter (no self-escalation, no self-lockout) */
         if (current && id === current && ["role", "accountStatus", "active", "sectionIds", "allSections"].some(k => k in fields)) return false;
         return applyUserUpdate(id, fields);
@@ -521,15 +607,22 @@ const Store = (() => {
             if (!name || d().users.some(y => y.id !== id && nameKey(y.name) === nameKey(name))) return false;
             x.name = name;
         }
-        ["jobTitle", "hireDate", "entity", "language", "pinHash"].forEach(k => { if (k in fields) x[k] = String(fields[k] == null ? "" : fields[k]); });
-        if ("role" in fields && ROLES.indexOf(fields.role) >= 0) x.role = fields.role;
+        if (("email" in fields && !validEmail(fields.email)) || ("phone" in fields && !validPhone(fields.phone))) return false;
+        if ("leaveDate" in fields && fields.leaveDate && !/^\d{4}-\d{2}-\d{2}$/.test(fields.leaveDate)) return false;
+        if ("contracts" in fields && !validContracts(fields.contracts)) return false;
+        if ("contracts" in fields) x.contracts = fields.contracts.map(c => ({ from: c.from, weeklyHours: +c.weeklyHours, normalHours: +c.normalHours, workDays: +c.workDays }))
+            .sort((a, b) => (a.from < b.from ? -1 : 1));
+        ["jobTitle", "hireDate", "entity", "language", "pinHash", "email", "phone", "leaveDate"].forEach(k => { if (k in fields) x[k] = String(fields[k] == null ? "" : fields[k]).trim(); });
+        /* the former "admin" (older screens or backups) becomes "quality" instead of being ignored */
+        const role = fields.role === "admin" ? "quality" : fields.role;
+        if ("role" in fields && ROLES.indexOf(role) >= 0) x.role = role;
         if ("active" in fields) x.accountStatus = fields.active === false ? "disabled" : "active";   /* 2.7 screens */
         if ("accountStatus" in fields) x.accountStatus = fields.accountStatus === "disabled" ? "disabled" : "active";
         if ("sectionIds" in fields) x.sectionIds = (fields.sectionIds || []).filter(sid => d().sections.some(sec => sec.id === sid));
         if ("allSections" in fields) x.allSections = !!fields.allSections;
         if ("clockRequired" in fields) x.clockRequired = !!fields.clockRequired;
         if (!activeAdmins().length) { Object.assign(x, before); return false; }
-        const trace = ["name", "jobTitle", "hireDate", "role", "accountStatus", "sectionIds", "allSections", "clockRequired"]
+        const trace = ["name", "jobTitle", "hireDate", "role", "accountStatus", "sectionIds", "allSections", "clockRequired", "email", "phone", "leaveDate", "contracts"]
             .filter(k => JSON.stringify(before[k]) !== JSON.stringify(x[k]));
         if (trace.length) {
             const b = {}, a2 = {};
@@ -545,7 +638,7 @@ const Store = (() => {
     function sections() { return copy(d().sections); }
 
     function addSection(name) {
-        if (!allowed("users.manage")) return null;
+        if (!allowed("employees.manage")) return null;
         const n = String(name || "").trim();
         if (!n || d().sections.some(x => nameKey(x.name) === nameKey(n))) return null;
         const created = { id: Utils.uid("sec"), name: n };
@@ -556,12 +649,23 @@ const Store = (() => {
     }
 
     function renameSection(id, name) {
-        if (!allowed("users.manage")) return false;
+        if (!allowed("employees.manage")) return false;
         const sec = d().sections.find(x => x.id === id);
         const n = String(name || "").trim();
         if (!sec || !n || d().sections.some(x => x.id !== id && nameKey(x.name) === nameKey(n))) return false;
         log("section.renamed", id, { name: sec.name }, { name: n });
         sec.name = n;
+        save(); notify();
+        return true;
+    }
+
+    /* 4.1.7: a section is deleted only when nobody is attached to it any more (no orphan perimeter) */
+    function removeSection(id) {
+        if (!allowed("employees.manage")) return false;
+        const sec = d().sections.find(x => x.id === id);
+        if (!sec || d().users.some(u => (u.sectionIds || []).indexOf(id) >= 0)) return false;
+        d().sections = d().sections.filter(x => x.id !== id);
+        log("section.removed", id, { name: sec.name }, null);
         save(); notify();
         return true;
     }
@@ -574,12 +678,12 @@ const Store = (() => {
     }
 
     /* Own profile: name, language and password for everybody; hire date and
-       job title only with "users.manage" (they drive the leave balance). */
+       job title only with "employees.manage" (they drive the leave balance). */
     function updateProfile(fields) {
         if (!current) return false;
         const own = {};
         Object.keys(fields).forEach(k => {
-            if (["name", "language", "pinHash"].indexOf(k) >= 0 || (["hireDate", "jobTitle"].indexOf(k) >= 0 && allowed("users.manage"))) own[k] = fields[k];
+            if (["name", "language", "pinHash", "email", "phone"].indexOf(k) >= 0 || (["hireDate", "jobTitle"].indexOf(k) >= 0 && allowed("employees.manage"))) own[k] = fields[k];
         });
         return Object.keys(own).length ? applyUserUpdate(current, own) : false;
     }
@@ -597,11 +701,16 @@ const Store = (() => {
     /* Team rules: "settings.manage" only; every change is traced. */
     function updateOrg(fields) {
         if (!current || !allowed("settings.manage")) return false;
+        const changes = [];
         Object.keys(fields).forEach(k => {
-            if (!(k in DEFAULT_ORG) || JSON.stringify(d().org[k]) === JSON.stringify(fields[k])) return;
+            if (!(k in DEFAULT_ORG) || k === "rulesVersion" || JSON.stringify(d().org[k]) === JSON.stringify(fields[k])) return;
             log("setting.changed", k, d().org[k], fields[k]);
+            changes.push({ k, b: d().org[k], a: fields[k] });
             d().org[k] = fields[k];
         });
+        /* 3.0: every rule changed by a manager is announced to the technicians automatically */
+        if (changes.length) notifyUsers(d().users.filter(x => x.accountStatus !== "disabled" && x.role === "technician").map(x => x.id),
+            "rules.changed", { name: (user(current) || {}).name, rules: changes });
         save(); notify();
         return true;
     }
@@ -636,7 +745,7 @@ const Store = (() => {
 
     /* { client, status: "created" | "merged" | "unchanged" } or null if the name is empty */
     function addClient(fields) {
-        if (!allowed("settings.manage") && !allowed("timesheet.correct.approve")) return null;   /* shared clients: managers only */
+        if (!allowed("settings.manage") && !allowed("timeclock.correction.approve")) return null;   /* shared clients: managers only */
         const name = String(fields.name || "").trim();
         if (!name) return null;
         const city = String(fields.city || "").trim();
@@ -655,7 +764,7 @@ const Store = (() => {
     }
 
     function updateClient(id, fields) {
-        if (!allowed("settings.manage") && !allowed("timesheet.correct.approve")) return false;   /* shared clients: managers only */
+        if (!allowed("settings.manage") && !allowed("timeclock.correction.approve")) return false;   /* shared clients: managers only */
         const c = d().clients.find(x => x.id === id);
         if (!c) return false;
         const name = String(fields.name || "").trim();
@@ -669,7 +778,7 @@ const Store = (() => {
 
     /* Entries keep a copy of the client name: deleting a client never erases hours. */
     function deleteClient(id) {
-        if (!allowed("settings.manage") && !allowed("timesheet.correct.approve")) return false;   /* shared clients: managers only */
+        if (!allowed("settings.manage") && !allowed("timeclock.correction.approve")) return false;   /* shared clients: managers only */
         d().clients = d().clients.filter(c => c.id !== id);
         save(); notify();
     }
@@ -694,9 +803,9 @@ const Store = (() => {
     }
 
     /* Live clocking creates entries freely; a MANUAL entry or an IMPORT is a
-       correction: "timesheet.correct.approve" only (request of 06/11/2026). */
+       correction: "timeclock.correction.approve" only (request of 06/11/2026). */
     function addEntry(fields) {
-        if ((fields.manual || fields.imported) && !allowed("timesheet.correct.approve")) return null;
+        if ((fields.manual || fields.imported) && !allowed("timeclock.correction.approve")) return null;
         const e = {
             id: Utils.uid("en"),
             category: fields.category,
@@ -723,8 +832,8 @@ const Store = (() => {
         const e = u().entries.find(x => x.id === id);
         if (!e) return null;
         /* a traced change (correction), or any change of a finished entry, needs
-           "timesheet.correct.approve"; live clocking only closes its running entry */
-        if ((trace || e.end != null) && !allowed("timesheet.correct.approve")) return null;
+           "timeclock.correction.approve"; live clocking only closes its running entry */
+        if ((trace || e.end != null) && !allowed("timeclock.correction.approve")) return null;
         if (trace) {
             e.history.push({ at: new Date().toISOString(), by: current, reason: reason || "",
                 before: { category: e.category, clientName: e.clientName, line: e.line, note: e.note, start: e.start, end: e.end } });
@@ -742,12 +851,13 @@ const Store = (() => {
     }
 
     /* Live clocking may cancel its own RUNNING entry (a few seconds); deleting a
-       finished entry is a correction: "timesheet.correct.approve" + reason (traced). */
+       finished entry is a correction: "timeclock.correction.approve" + reason (traced). */
     function deleteEntry(id, reason) {
         const e = u().entries.find(x => x.id === id);
         if (!e) return false;
         const ownRunning = e.end == null && owner() === current;
-        if (!ownRunning && !allowed("timesheet.correct.approve")) return false;
+        if (!ownRunning && !allowed("timeclock.correction.approve")) return false;
+        if (!ownRunning && isLockedDay(owner(), e.start)) return false;   /* locked week: reopen it first (10/11/2026) */
         u().entries = u().entries.filter(x => x.id !== id);
         if (!ownRunning) log("timesheet.entryDeleted", owner(), { category: e.category, start: e.start, end: e.end }, null, reason);
         save(); notify();
@@ -790,11 +900,11 @@ const Store = (() => {
        o = { userId, entryId (null = add), fields: { category, clientId, line, note,
              start (arrival), end (departure) }, lunch: { start, end } | null, reason }.
        Saved as clean consecutive entries (activity · meal · activity). Managers
-       only ("timesheet.correct.approve"), reason mandatory, original values kept
+       only ("timeclock.correction.approve"), reason mandatory, original values kept
        in the entries' history, one audit event, owner notified, the open error
        reports of that day answered. Returns true or an error code. */
     function correctDay(o) {
-        if (!allowed("timesheet.correct.approve")) return "forbidden";
+        if (!allowed("timeclock.correction.approve")) return "forbidden";
         if (!String(o.reason || "").trim()) return "reasonRequired";
         const uid = o.userId || current;
         if (current && uid !== current && !Permissions.canSeeUser(current, uid)) return "forbidden";
@@ -802,6 +912,7 @@ const Store = (() => {
         if (!(f.start < f.end)) return "badTimes";
         if (o.lunch && !(o.lunch.start < o.lunch.end)) return "badLunch";
         if (o.lunch && !(o.lunch.start > f.start && o.lunch.end < f.end)) return "lunchOutside";
+        if (isLockedDay(uid, f.start) || (o.entryId && withUser(uid, () => { const e = entry(o.entryId); return e && isLockedDay(uid, e.start); }))) return "weekLocked";
         return withUser(uid, () => batch(() => {
             const iso = Utils.isoLocal(f.start);
             const hm = t2 => Utils.clock(t2);
@@ -839,11 +950,11 @@ const Store = (() => {
     }
 
     /* ---------------- Error reports (technician → managers) ----------------
-       "timesheet.correct.request": the technician (or a team lead, for an account
+       "timeclock.correction.request": the technician (or a team lead, for an account
        of their perimeter) describes the error; the managers correct the day. */
     function requestCorrection(fields) {
-        if (!current || !allowed("timesheet.correct.request")) return "forbidden";
         const uid = fields.userId || current;
+        if (!current || !allowed(uid === current ? "timeclock.report_issue" : "timeclock.correction.request")) return "forbidden";
         if (uid !== current && !Permissions.canSeeUser(current, uid)) return "forbidden";
         const text = String(fields.text || "").trim();
         if (!text) return "textRequired";
@@ -852,7 +963,7 @@ const Store = (() => {
             status: "open", closedBy: "", closedAt: null, comment: "" };
         d().correctionRequests.push(r);
         log("timesheet.correctionRequested", uid, null, { date: r.date }, text);
-        notifyUsers(usersWith("timesheet.correct.approve").concat(uid !== current ? [uid] : []), "timesheet.correctionRequested",
+        notifyUsers(usersWith("timeclock.correction.approve").concat(uid !== current ? [uid] : []), "timesheet.correctionRequested",
             { name: (user(uid) || {}).name, date: Utils.dateDmy(r.date) });
         save(); notify();
         return copy(r);
@@ -863,7 +974,7 @@ const Store = (() => {
     function correctionRequests(userId) {
         const me = current;
         /* managers (they correct) and team leads (they follow their technicians) see their perimeter */
-        const follows = allowed("timesheet.correct.approve") || allowed("timesheet.team.view");
+        const follows = allowed("timeclock.correction.approve") || allowed("timeclock.team.view");
         return copy(d().correctionRequests).filter(r => (!userId || r.userId === userId) &&
             (r.userId === me || r.requestedBy === me || (follows && (!me || Permissions.canSeeUser(me, r.userId)))))
             .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
@@ -873,7 +984,7 @@ const Store = (() => {
     function closeCorrection(id, status, comment) {
         const r = d().correctionRequests.find(x => x.id === id);
         if (!r || r.status !== "open") return "notOpen";
-        if (!allowed("timesheet.correct.approve")) return "forbidden";
+        if (!allowed("timeclock.correction.approve")) return "forbidden";
         if (["done", "rejected"].indexOf(status) < 0) return "badStatus";
         if (status === "rejected" && !String(comment || "").trim()) return "commentRequired";
         r.status = status; r.closedBy = current; r.closedAt = new Date().toISOString(); r.comment = String(comment || "");
@@ -889,30 +1000,355 @@ const Store = (() => {
         return copy(u().requests).sort((a, b) => b.startDate.localeCompare(a.startDate));
     }
 
-    /* The requester never chooses the status: a new request is "pending".
-       "approved" is only used for imported history (addApprovedRequest). */
+    /* ---------------- Leave circuit (06/11/2026) ----------------
+       draft → pending_lead (team lead's opinion) → lead_favorable | lead_unfavorable
+       → approved | rejected (quality manager OR director); pending_final when no
+       team lead covers the person; cancelled by the requester before the decision.
+       Every step is in r.history and in the audit trail; the balance only moves
+       with "approved" (leave.js). Rights are checked HERE, not only in screens. */
+    const OPEN_STATUSES = ["pending_lead", "lead_favorable", "lead_unfavorable", "pending_final"];
+    const REQUEST_STATUSES = ["draft"].concat(OPEN_STATUSES, ["approved", "rejected", "cancelled"]);
+    const isOpenRequest = r => OPEN_STATUSES.indexOf(r.status) >= 0;
+
+    /* Team leads who review this person's requests (perimeter, active, not
+       approvers). Only for employees who neither review nor decide themselves:
+       the requests of team leads and managers go straight to the final decision. */
+    function leadsOf(ownerId) {
+        if (typeof Permissions === "undefined") return [];
+        if (d().org.leaveSingleDecision) return [];   /* 3.0 (10.1): no separate opinion step, the first decision is final */
+        if (Permissions.has(ownerId, "leave.team.review") || Permissions.has(ownerId, "leave.global.approve")) return [];
+        return d().users.filter(x => x.id !== ownerId && x.accountStatus !== "disabled" && Permissions.has(x.id, "leave.team.review") &&
+            !Permissions.has(x.id, "leave.global.approve") && Permissions.canSeeUser(x.id, ownerId)).map(x => x.id);
+    }
+    const approversOf = ownerId => usersWith("leave.global.approve").filter(id => id !== ownerId);
+
+    /* 3.0: may `deciderId` take the final decision on `ownerId`'s leave? The quality
+       manager and the director (leave.global.approve) always; the team lead
+       (leave.team.approve) for the people of his perimeter when rule 10.1 applies. */
+    function canDecideLeave(deciderId, ownerId) {
+        if (typeof Permissions === "undefined" || !deciderId || deciderId === ownerId) return false;
+        if (Permissions.has(deciderId, "leave.global.approve")) return Permissions.canSeeUser(deciderId, ownerId);
+        return !!d().org.leaveSingleDecision && Permissions.has(deciderId, "leave.team.approve") && Permissions.canSeeUser(deciderId, ownerId);
+    }
+
+    /* Everybody who may decide (notifications) — absent people excluded when someone else is present */
+    function decidersOf(ownerId) {
+        const all = d().users.filter(x => x.accountStatus !== "disabled" && canDecideLeave(x.id, ownerId)).map(x => x.id);
+        const present = all.filter(id => !isAway(id));
+        return present.length ? present : all;
+    }
+
+    /* 3.0: notice period (15 + 10.4): 1 day → leaveNoticeShort days ahead, 2 to 5 days →
+       leaveNoticeMid, more than 5 → leaveNoticeLong. Counted in calendar days from today. */
+    function noticeOf(r, ownerId) {
+        const o = d().org;
+        const n = typeof Leave !== "undefined" ? withUser(ownerId, () => Leave.workingDaysOf(r, profile())) : 1;
+        const required = n <= 1 ? Number(o.leaveNoticeShort) || 0 : n <= 5 ? Number(o.leaveNoticeMid) || 0 : Number(o.leaveNoticeLong) || 0;
+        const given = Math.round((Utils.utcDate(r.startDate) - Utils.utcDate(Utils.isoLocal(Date.now()))) / 86400000);
+        return { days: n, required, given, late: given < required };
+    }
+
+    /* Other people's leave overlapping these dates (approved or waiting) */
+    function overlapsOf(r, ownerId) {
+        const out = [];
+        d().users.forEach(x => {
+            if (x.id === ownerId || x.accountStatus === "disabled") return;
+            ((d().perUser[x.id] || {}).requests || []).forEach(y => {
+                if ((y.status === "approved" || isOpenRequest(y)) && y.startDate <= r.endDate && r.startDate <= y.endDate) out.push({ userId: x.id, id: y.id });
+            });
+        });
+        return out;
+    }
+    function step(r, ownerId, to, comment, extra) {
+        const from = r.status;
+        r.status = to;
+        r.history = (r.history || []).concat([{ at: new Date().toISOString(), by: current || ownerId, from, to, comment: comment || "" }]);
+        if (extra) Object.assign(r, extra);
+        log("leave." + to, ownerId, { status: from }, { status: to, type: r.type, start: r.startDate, end: r.endDate }, comment);
+    }
+
+    /* Sends a draft into the circuit: to the team lead, or straight to the final decision */
+    function route(r, ownerId) {
+        const leads = leadsOf(ownerId);
+        /* 3.0: flags shown to the deciders — late notice, overlap with someone else, balance exceeded */
+        const notice = noticeOf(r, ownerId);
+        r.lateNotice = notice.late;
+        r.overlap = overlapsOf(r, ownerId).length > 0;
+        r.overBalance = false;
+        if (r.type === "paid_leave" && typeof Leave !== "undefined") {
+            const b = withUser(ownerId, () => Leave.balance());
+            r.overBalance = !!b && b.available - b.pending - Leave.workingDaysOf(r, withUser(ownerId, profile)) < -1e-9;
+        }
+        step(r, ownerId, leads.length ? "pending_lead" : "pending_final", "");
+        const name = (user(ownerId) || {}).name;
+        const to = leads.length ? leads : decidersOf(ownerId);
+        const params = { name, type: r.type, from: Utils.dateDmy(r.startDate), to: Utils.dateDmy(r.endDate) };
+        notifyUsers(to, leads.length ? "leave.toReview" : "leave.toDecide", params);
+        if (r.lateNotice) notifyUsers(to, "leave.lateNotice", Object.assign({ days: notice.required }, params));
+        if (r.overlap) notifyUsers(decidersOf(ownerId), "leave.overlap", params);
+        if (r.overBalance) notifyUsers(decidersOf(ownerId), "leave.overBalance", params);
+    }
+
+    /* New request of the signed-in person (fields.draft = keep as draft). The
+       requester never chooses the status; approved history only comes from
+       addApprovedRequest (managers' register import). */
     function addRequest(fields) {
+        if (fields.__approvedHistory !== true && current) {
+            /* own request: the right to request; on behalf (3.0): a manager who decides for that person */
+            const ownerId = owner();
+            if (ownerId === current ? !allowed("leave.self.request")
+                : !(allowed("leave.global.approve") && Permissions.canSeeUser(current, ownerId) && Permissions.has(ownerId, "leave.self.request"))) return null;
+        }
+        if (REQUEST_TYPES.indexOf(fields.type) < 0) return null;
+        if (fields.type === "other" && !String(fields.comment || "").trim()) return null;   /* "other": comment required */
+        if (fields.__approvedHistory !== true && fields.draft !== true && d().org.leaveNoticeBlocks && current === owner() &&
+            noticeOf(fields, owner()).late) return null;   /* 10.5: late requests refused when the rule says so */
         const r = {
             id: Utils.uid("rq"),
             type: fields.type,
             startDate: fields.startDate,
             endDate: fields.endDate,
+            /* 3.0: half day — only on a one-day request: "am" (morning) | "pm" (afternoon) */
+            half: fields.startDate === fields.endDate && (fields.half === "am" || fields.half === "pm") ? fields.half : "",
             comment: fields.comment || "",
-            /* a new request is ALWAYS pending: approved history only comes from
-               addApprovedRequest (managers' register import) — never from the caller */
-            status: fields.__approvedHistory === true ? "approved" : "pending",
+            status: fields.__approvedHistory === true ? "approved" : "draft",
             imported: !!fields.imported,
             createdAt: new Date().toISOString(),
-            decidedBy: "", decidedAt: null
+            decidedBy: "", decidedAt: null, history: [], review: null, decisionComment: "", bypassReason: ""
         };
         u().requests.push(r);
+        if (r.status === "draft") {
+            log("leave.created", owner(), null, { type: r.type, start: r.startDate, end: r.endDate });
+            if (!fields.draft) route(r, owner());
+        }
         save(); notify();
         return copy(r);
     }
 
+    function ownRequest(id) { return u().requests.find(x => x.id === id); }
+
+    /* A draft (or one sent back for changes) can be edited and sent */
+    function updateDraft(id, fields) {
+        const r = ownRequest(id);
+        if (!r || r.status !== "draft") return false;
+        ["type", "startDate", "endDate", "comment", "half"].forEach(k => { if (k in fields) r[k] = fields[k]; });
+        if (r.startDate !== r.endDate || (r.half !== "am" && r.half !== "pm")) r.half = "";
+        save(); notify();
+        return true;
+    }
+
+    function submitRequest(id) {
+        const r = ownRequest(id);
+        if (!r || r.status !== "draft") return false;
+        route(r, owner());
+        save(); notify();
+        return true;
+    }
+
+    /* Team lead's opinion: "favorable" | "unfavorable" (comment required) | "changes"
+       (back to the requester as a draft, comment required). Never on one's own request. */
+    function reviewRequest(ownerId, requestId, opinion, comment) {
+        if (!current || ownerId === current) return "ownRequest";
+        if (d().org.leaveSingleDecision) return "notWaiting";   /* 10.1: no opinion step */
+        if (!allowed("leave.team.review") || !Permissions.canSeeUser(current, ownerId)) return "forbidden";
+        const r = ((d().perUser[ownerId] || {}).requests || []).find(x => x.id === requestId);
+        if (!r) return "notFound";
+        if (r.status !== "pending_lead") return "notWaiting";
+        const c = String(comment || "").trim();
+        if ((opinion === "unfavorable" || opinion === "changes") && !c) return "commentRequired";
+        const to = { favorable: "lead_favorable", unfavorable: "lead_unfavorable", changes: "draft" }[opinion];
+        if (!to) return "badOpinion";
+        const review = { by: current, at: new Date().toISOString(), opinion, comment: c };
+        step(r, ownerId, to, c, { review });
+        const params = { name: (user(current) || {}).name, from: Utils.dateDmy(r.startDate), to: Utils.dateDmy(r.endDate) };
+        if (to === "draft") notifyUsers([ownerId], "leave.changesAsked", params);
+        else { notifyUsers([ownerId], "leave.reviewed." + opinion, params); notifyUsers(approversOf(ownerId), "leave.toDecide", Object.assign({ type: r.type }, params, { name: (user(ownerId) || {}).name })); }
+        save(); notify();
+        return true;
+    }
+
+    /* Final decision (quality manager OR director: "leave.global.approve", or a
+       delegated temporary right). Refusal needs a comment. Deciding while the
+       team lead has not given an opinion needs a justification (team lead
+       unavailable), unless no team lead covers the person. Returns true or false
+       (kept for the older screens); opts.result receives the error code. */
+    function decideRequest(ownerId, requestId, status, deciderId, opts) {
+        const o = opts || {};
+        const fail = code => { o.result = code; return false; };
+        const decider = d().users.find(x => x.id === deciderId);
+        if (!decider || !canDecideLeave(deciderId, ownerId)) return fail("forbidden");
+        if (current && deciderId !== current) return fail("forbidden");
+        if (status !== "approved" && status !== "rejected") return fail("badStatus");
+        const r = ((d().perUser[ownerId] || {}).requests || []).find(x => x.id === requestId);
+        if (!r || !isOpenRequest(r)) return fail("notWaiting");
+        const comment = String(o.comment || "").trim();
+        if (status === "rejected" && !comment) return fail("commentRequired");
+        let bypass = "";
+        if (r.status === "pending_lead" && leadsOf(ownerId).length) {
+            bypass = String(o.bypass || "").trim();
+            if (!bypass) return fail("bypassRequired");
+        }
+        const saved = current; current = deciderId;
+        step(r, ownerId, status, [bypass && "⚠ " + bypass, comment].filter(Boolean).join(" — "),
+            { decidedBy: decider.name, decidedAt: new Date().toISOString(), decisionComment: comment, bypassReason: bypass });
+        notifyUsers([ownerId], "leave.decided." + status, { from: Utils.dateDmy(r.startDate), to: Utils.dateDmy(r.endDate), name: decider.name });
+        if (r.review && r.review.by) notifyUsers([r.review.by], "leave.decided." + status + ".lead", { name: (user(ownerId) || {}).name, from: Utils.dateDmy(r.startDate) });
+        current = saved;
+        save(); notify();
+        return true;
+    }
+
+    /* 3.0 (16): the requester asks to cancel an APPROVED leave; a decider accepts or refuses */
+    function requestCancellation(id, comment) {
+        const r = ownRequest(id);
+        if (!r || r.status !== "approved" || r.cancelRequest || r.imported) return false;
+        r.cancelRequest = { at: new Date().toISOString(), by: current || owner(), comment: String(comment || "").trim() };
+        log("leave.cancelAsked", owner(), null, { start: r.startDate, end: r.endDate }, r.cancelRequest.comment);
+        notifyUsers(decidersOf(owner()), "leave.cancelAsked", { name: (user(owner()) || {}).name, from: Utils.dateDmy(r.startDate), to: Utils.dateDmy(r.endDate) });
+        save(); notify();
+        return true;
+    }
+
+    function decideCancellation(ownerId, requestId, accept, comment) {
+        if (!current || !canDecideLeave(current, ownerId)) return "forbidden";
+        const r = ((d().perUser[ownerId] || {}).requests || []).find(x => x.id === requestId);
+        if (!r || r.status !== "approved" || !r.cancelRequest) return "notWaiting";
+        const c = String(comment || "").trim();
+        if (!accept && !c) return "commentRequired";
+        const params = { name: (user(current) || {}).name, from: Utils.dateDmy(r.startDate), to: Utils.dateDmy(r.endDate) };
+        if (accept) step(r, ownerId, "cancelled", c, { cancelRequest: null });
+        else { r.cancelRequest = null; log("leave.cancelRefused", ownerId, null, { start: r.startDate, end: r.endDate }, c); }
+        notifyUsers([ownerId], accept ? "leave.cancelAccepted" : "leave.cancelRefused", params);
+        save(); notify();
+        return true;
+    }
+
+    /* 3.0 (13): carry-over of leave days on request and validation. The person asks
+       (notification to the deciders); a decider records the days carried. */
+    function requestCarryOver(days, comment) {
+        const n = Math.round(Number(days) * 2) / 2;
+        if (!current || !(n > 0) || !allowed("leave.self.request")) return false;
+        log("leave.carryAsked", owner(), null, { days: n }, String(comment || "").trim());
+        notifyUsers(decidersOf(owner()), "leave.carryAsked", { name: (user(owner()) || {}).name, days: n });
+        save(); notify();
+        return true;
+    }
+
+    function carryOver(ownerId, days, comment) {
+        const n = Math.round(Number(days) * 2) / 2;
+        if (!current || !canDecideLeave(current, ownerId)) return "forbidden";
+        if (!(n !== 0) || !isFinite(n)) return "badDays";
+        const m = { id: Utils.uid("lm"), userId: ownerId, kind: "carry", days: n, at: new Date().toISOString(), by: current,
+            period: typeof Leave !== "undefined" ? Leave.periodStart(Utils.isoLocal(Date.now())) : "", comment: String(comment || "").trim() };
+        d().leaveMovements.push(m);
+        log("leave.carried", ownerId, null, { days: n, period: m.period }, m.comment);
+        notifyUsers([ownerId], "leave.carried", { days: n, name: (user(current) || {}).name });
+        save(); notify();
+        return true;
+    }
+
+    const leaveMovements = userId => copy(d().leaveMovements.filter(m => !userId || m.userId === userId));
+
+    /* ---------- 3.0: absence of a manager (replacement rules 8 and 9) ---------- */
+    /* A manager declares "away from … to …" (profile); while away, the others decide
+       in his place: team lead away → quality / director validate the weeks directly;
+       quality AND director away → the team lead's validation locks the week. */
+    function isAway(uid, day) {
+        const x = d().users.find(y => y.id === uid);
+        const iso = day || Utils.isoLocal(Date.now());
+        return !!(x && x.awayFrom && x.awayTo && x.awayFrom <= iso && iso <= x.awayTo);
+    }
+
+    function setAway(from, to) {
+        const x = d().users.find(y => y.id === current);
+        if (!x) return false;
+        if ((from || to) && !(from && to && from <= to)) return false;
+        const before = { awayFrom: x.awayFrom || "", awayTo: x.awayTo || "" };
+        x.awayFrom = from || ""; x.awayTo = to || "";
+        log("user.away", current, before, { awayFrom: x.awayFrom, awayTo: x.awayTo });
+        save(); notify();
+        return true;
+    }
+
+    /* 3.0: a person asks the managers to delete his account (the account is never
+       deleted here: a manager disables it — history kept — and handles the request) */
+    /* ---------------- Forgotten password (4.3) ----------------
+       Contact of an account: empty, or a plausible e-mail / phone number. */
+    const validEmail = v => v == null || v === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim());
+    const validPhone = v => v == null || v === "" || /^\+?[0-9 .()-]{6,20}$/.test(String(v).trim());
+
+    /* 4.5: contracts of a person — dated, hours within sensible bounds, one per date */
+    function validContracts(list) {
+        return Array.isArray(list) && list.length <= 30 && list.every(c => c && /^\d{4}-\d{2}-\d{2}$/.test(c.from) &&
+            +c.weeklyHours > 0 && +c.weeklyHours <= 60 && +c.normalHours >= 0 && +c.normalHours <= +c.weeklyHours && [5, 6].indexOf(+c.workDays) >= 0) &&
+            new Set(list.map(c => c.from)).size === list.length;
+    }
+
+    /* Active accounts that may reset the password of `id` (hierarchy: permissions.js) */
+    function passwordResetters(id) {
+        return d().users.filter(x => x.accountStatus !== "disabled" && Permissions.canResetPassword(x.id, id)).map(x => x.id);
+    }
+    const resetNotified = id => passwordResetters(id).filter(x => (user(x) || {}).role !== "it_admin");
+
+    /* From the sign-in screen (nobody signed in): "I forgot my password" → the managers of the
+       person are told. One pending request at a time. Returns "ok" | "already" | an error code. */
+    function askPasswordUnlock(id) {
+        const x = d().users.find(y => y.id === id);
+        if (current && current !== id) return "forbidden";
+        if (!x || x.accountStatus === "disabled" || !x.pinHash) return "notFound";
+        if (x.unlockAskedAt) return "already";
+        const to = resetNotified(id);
+        if (!to.length) return "nobody";
+        x.unlockAskedAt = new Date().toISOString();
+        log("user.unlockAsked", id);
+        notifyUsers(to, "account.unlockAsked", { name: x.name }, "team/" + id);
+        save(); notify();
+        return "ok";
+    }
+
+    /* The person signed in after all (password remembered, PIN, fingerprint): request closed */
+    function clearPasswordUnlock() {
+        const x = d().users.find(y => y.id === current);
+        if (x && x.unlockAskedAt) x.unlockAskedAt = "";
+    }
+
+    /* A manager (or the team lead of the person) resets the password: the person chooses a new one
+       at the next sign-in. The person and the other managers are told. */
+    function resetPassword(id) {
+        if (!current || !Permissions.canResetPassword(current, id)) return false;
+        const x = d().users.find(y => y.id === id);
+        if (!x || !x.pinHash) return false;
+        const by = (user(current) || {}).name;
+        if (!applyUserUpdate(id, { pinHash: "" })) return false;   /* audit: user.passwordReset */
+        x.unlockAskedAt = "";
+        notifyUsers([id], "account.passwordResetMine", { by });
+        notifyUsers(resetNotified(id), "account.passwordReset", { name: x.name, by }, "team/" + id);
+        save(); notify();
+        return true;
+    }
+
+    function requestDeletion(comment) {
+        if (!current) return false;
+        log("user.deletionAsked", current, null, null, String(comment || "").trim());
+        notifyUsers(usersWith("employees.manage").filter(id => (user(id) || {}).role !== "it_admin"), "account.deletionAsked",
+            { name: (user(current) || {}).name });
+        save(); notify();
+        return true;
+    }
+
+    /* The requester cancels a request not decided yet (history kept) */
+    function cancelRequest(id, comment) {
+        const r = ownRequest(id);
+        if (!r || !(r.status === "draft" || isOpenRequest(r))) return false;
+        step(r, owner(), "cancelled", comment || "");
+        if (r.review && r.review.by) notifyUsers([r.review.by], "leave.cancelled", { name: (user(owner()) || {}).name, from: Utils.dateDmy(r.startDate) });
+        save(); notify();
+        return true;
+    }
+
     /* Approved history (managers' register import): managers only */
     function addApprovedRequest(fields) {
-        if (!allowed("timesheet.correct.approve")) return null;
+        if (!allowed("timeclock.correction.approve")) return null;
         const duplicate = u().requests.some(x => x.type === fields.type && x.startDate === fields.startDate &&
             x.endDate === fields.endDate && x.status === "approved");
         if (duplicate) return null;
@@ -928,26 +1364,15 @@ const Store = (() => {
         return out.sort((a, b) => a.startDate.localeCompare(b.startDate));
     }
 
-    /* ⚠️ Decision by an ADMIN on another account's request. Refused when
-       the decider is not an admin, decides on their own request, or the
-       request is no longer pending. */
-    function decideRequest(ownerId, requestId, status, deciderId) {
-        const decider = d().users.find(x => x.id === deciderId);
-        if (!decider || !Permissions.has(deciderId, "leave.approve") || ownerId === deciderId) return false;
-        if (status !== "approved" && status !== "rejected") return false;
-        const r = ((d().perUser[ownerId] || {}).requests || []).find(x => x.id === requestId);
-        if (!r || r.status !== "pending") return false;
-        r.status = status;
-        r.decidedBy = decider.name;
-        r.decidedAt = new Date().toISOString();
+    /* Only a draft that was never sent can be deleted (no history to keep) */
+    function deleteRequest(id) {
+        const r = ownRequest(id);
+        if (!r || r.status !== "draft" || (r.history || []).length) return false;
+        u().requests = u().requests.filter(x => x.id !== id);
         save(); notify();
         return true;
     }
 
-    function deleteRequest(id) {
-        u().requests = u().requests.filter(x => x.id !== id);
-        save(); notify();
-    }
 
     /* APPROVED requests of the current account covering "YYYY-MM-DD" */
     function absencesOn(iso) {
@@ -969,30 +1394,48 @@ const Store = (() => {
         }, null, 2);
     }
 
-    /* Replaces the CURRENT account's hours, requests and settings with the
-       file's; clients are merged (ids remapped when the same client already
-       exists). Accepts version 3 account backups and version 1/2 backups.
-       Returns an error code or null. */
+    /* PERSONAL restore (Lot 1, anomaly C1). A personal backup holds the account's own copy of its
+       data, but restoring it may only bring back the PERSONAL SETTINGS (reminder, vibration…):
+       hours, leave, clients and balances are business data shared with the team and are never
+       written from this file (a technician could otherwise forge approved leave or hours).
+       Strict check of the settings (closed list, types), verified safety copy of the current
+       settings, audit event with what was applied and what was ignored.
+       Only the signed-in account is concerned, whatever withUser() is doing.
+       Returns an error code or null; lastPersonalRestore() gives the report. */
+    let personalReport = null;
+
+    function personalRefused(reason, codes) {
+        restoreRefused("personal", reason, codes);
+        return reason;
+    }
+
     function importJson(text) {
+        if (!current) return "notBackup";
         let read;
-        try { read = JSON.parse(text); } catch (e) { return "notJson"; }
+        try { read = JSON.parse(text); } catch (e) { return personalRefused("notJson"); }
         let src;
         if (isV1(read)) src = migrateV1(read);
-        else if (read && Array.isArray(read.entries) && Array.isArray(read.requests) && Array.isArray(read.clients)) src = read;
-        else return "notBackup";
-        if (!current) return "notBackup";
-        const remap = {};
-        src.clients.forEach(c => {
-            const same = d().clients.find(x => x.id === c.id) ||
-                d().clients.find(x => clientKey(x.name, x.city) === clientKey(c.name, c.city));
-            if (same) remap[c.id] = same.id;
-            else { d().clients.push(copy(c)); remap[c.id] = c.id; }
-        });
-        const entries = copy(src.entries).map(e => Object.assign(e, { clientId: e.clientId ? (remap[e.clientId] || "") : "" }));
-        d().perUser[current] = normaliseUserData({ settings: src.settings, entries, requests: src.requests, lastBackupAt: src.lastBackupAt });
+        else if (read && read.kind !== "full" && Array.isArray(read.entries) && Array.isArray(read.requests) && Array.isArray(read.clients)) src = read;
+        else return personalRefused("notBackup");
+        const checked = Validation.settings(src.settings);
+        if (checked.errors.length || checked.unknown.length) return personalRefused("invalidSettings", checked.errors.concat(checked.unknown));
+        const mine = d().perUser[current] || (d().perUser[current] = emptyUserData());
+        const applied = Object.keys(checked.values).filter(k => JSON.stringify(checked.values[k]) !== JSON.stringify(mine.settings[k]));
+        const key = "acp_backup_before_personal_" + new Date().toISOString().replace(/[:.]/g, "-");
+        const snapshot = JSON.stringify({ userId: current, at: new Date().toISOString(), settings: copy(mine.settings) });
+        if (!StorageAdapter.set(key, snapshot) || StorageAdapter.get(key) !== snapshot) return personalRefused("backupFailed");
+        StorageAdapter.keys().filter(k => k.indexOf("acp_backup_before_personal_") === 0).sort().slice(0, -5).forEach(k => StorageAdapter.remove(k));   /* keep the 5 latest */
+        const before = {};
+        applied.forEach(k => { before[k] = mine.settings[k]; mine.settings[k] = copy(checked.values[k]); });
+        const ignored = { entries: src.entries.length, requests: src.requests.length, clients: src.clients.length };
+        personalReport = { applied, ignored, safetyCopy: key };
+        log("backup.personalRestored", current, before, { applied, ignoredEntries: ignored.entries, ignoredRequests: ignored.requests,
+            ignoredClients: ignored.clients, safetyCopy: key });
         save(); notify();
         return null;
     }
+
+    const lastPersonalRestore = () => (personalReport ? copy(personalReport) : null);
 
     /* ---------------- Home work day (05/11/2026) ----------------
        One tap: home work (homeWorkHours, 7 h) + lunch (homeLunchMinutes), from
@@ -1000,8 +1443,9 @@ const Store = (() => {
        the day already has other entries (a home day stands alone with its lunch).
        Returns the created entries, or an error code. */
     function declareHomeDay(iso) {
-        if (!current || !allowed("clock.own")) return "forbidden";
+        if (!current || !allowed("timeclock.self")) return "forbidden";
         const o = d().org;
+        if (!o.homeDayPreset) return "notPreset";   /* 3.1: fixed home day only when the employer turned it on */
         const dayStart = Utils.localDate(iso).getTime();
         const dayEnd = Utils.localDate(Utils.addDays(iso, 1)).getTime();
         const sameDay = u().entries.filter(e => e.start < dayEnd && (e.end == null ? Date.now() : e.end) > dayStart);
@@ -1018,6 +1462,321 @@ const Store = (() => {
         log("timesheet.homeDeclared", current, null, { date: iso, hours: homeMs / 3600000 });
         save();
         return created;
+    }
+
+    /* ---------------- Clocking actions (10/11/2026) ----------------
+       ONE place for the live clocking of the signed-in person (screen, home-screen
+       shortcuts): rules checked here, not only in the screen.
+       startClock({ category, clientId, line, note, urgent }) → entry | error code:
+         "forbidden"     no "timeclock.self";
+         "weekNotSent"   the previous week has to be reviewed and sent first (rule weekClosureRequired);
+         "absenceToday"  approved leave / time off today: allowed only as an URGENT call-out
+                         (urgent: true) — traced and signalled to the managers; the day stays
+                         credited and the hours get the absenceWorkedRate premium (hours.js).
+       Starting an activity closes the running one at the same instant; an entry
+       shorter than MIN_ENTRY_MS (double tap) is removed instead of being kept.
+       Every action can be undone for undoSeconds (undoClock). */
+    const MIN_ENTRY_MS = 5000;
+    let lastAction = null;   /* { at, userId, created: [ids], closed: [{ id }], removed: [entries] } — memory only */
+
+    function closeRunning(at, action) {
+        const running = u().entries.find(x => x.end == null);
+        if (!running) return null;
+        if (at - running.start < MIN_ENTRY_MS) {
+            u().entries = u().entries.filter(x => x.id !== running.id);
+            action.removed.push(copy(running));
+        } else {
+            running.end = at;
+            running.synced = false;
+            action.closed.push({ id: running.id });
+        }
+        return running;
+    }
+
+    const absenceToday = () => u().requests.filter(x => x.status === "approved" && (x.type === "paid_leave" || x.type === "time_off") &&
+        x.startDate <= Utils.isoLocal(Date.now()) && Utils.isoLocal(Date.now()) <= x.endDate);
+
+    function startClock(fields) {
+        if (!current || owner() !== current || !allowed("timeclock.self")) return "forbidden";
+        const f = fields || {};
+        const now = Date.now();
+        const running = u().entries.find(x => x.end == null);
+        const clientId = f.clientId || "";
+        const line = f.line || "";
+        if (running && running.category === f.category && running.clientId === clientId && running.line === line) return copy(running);
+        if (!running && weekToSend()) return "weekNotSent";
+        /* 3.1: never on top of hours already recorded (a declared home day, an imported day) */
+        if (u().entries.some(x => x.end != null && x.end > now)) return "dayRecorded";
+        const absences = absenceToday();
+        if (!running && absences.length && !f.urgent) return "absenceToday";
+        const action = { at: now, userId: current, created: [], closed: [], removed: [] };
+        closeRunning(now, action);
+        const e = { id: Utils.uid("en"), category: f.category, clientId, clientName: clientId ? clientName(clientId) : "", line, note: f.note || "",
+            start: now, end: null, manual: false, imported: false, edited: false, toCheck: false, history: [], synced: false };
+        if (absences.length) e.urgent = true;
+        u().entries.push(e);
+        action.created.push(e.id);
+        lastAction = action;
+        if (absences.length && f.urgent && !running) {
+            log("clock.urgent", current, null, { date: Utils.isoLocal(now), type: absences[0].type, time: Utils.clock(now) });
+            notifyUsers(watchersOf(current), "clock.urgent", { name: (user(current) || {}).name, time: Utils.clock(now) });
+        }
+        save(); notify();
+        return copy(e);
+    }
+
+    /* Departure (or the end of the running activity). `at` (optional) ≤ now. */
+    function stopClock(at) {
+        if (!current || owner() !== current) return false;
+        const action = { at: Date.now(), userId: current, created: [], closed: [], removed: [] };
+        const done = closeRunning(Math.min(at || Date.now(), Date.now()), action);
+        if (!done) return false;
+        lastAction = action;
+        save(); notify();
+        return true;
+    }
+
+    /* Seconds left to undo the last clocking action of the signed-in person (0 = none) */
+    function undoLeft() {
+        const limit = (Number(d().org.undoSeconds) || 0) * 1000;
+        if (!lastAction || lastAction.userId !== current || !limit) return 0;
+        return Math.max(0, Math.ceil((lastAction.at + limit - Date.now()) / 1000));
+    }
+
+    function undoClock() {
+        if (!undoLeft()) return "expired";
+        const a = lastAction;
+        lastAction = null;
+        const mine = d().perUser[a.userId];
+        mine.entries = mine.entries.filter(x => a.created.indexOf(x.id) < 0);
+        a.closed.forEach(c => { const x = mine.entries.find(y => y.id === c.id); if (x) { x.end = null; x.synced = false; } });
+        a.removed.forEach(x => mine.entries.push(x));
+        log("clock.undone", a.userId, null, { created: a.created.length, reopened: a.closed.length });
+        save(); notify();
+        return true;
+    }
+
+    /* ---------------- Night period (10/11/2026) ----------------
+       An activity started BEFORE the night period (nightStart, 21:00) that is still
+       running when it begins: a 10 s countdown asks "still working?". Without an
+       answer the departure is clocked at nightStart exactly and the managers are
+       informed. An activity started during the night period is never questioned. */
+    function nightLimit(e) {
+        const o = d().org;
+        if (!o.nightCountdown || !e || e.end != null || e.nightConfirmed) return 0;
+        if (e.category === "break" || e.category === "lunch") return 0;
+        const s = new Date(e.start);
+        const limit = new Date(s.getFullYear(), s.getMonth(), s.getDate(), Number(o.nightStart) || 0).getTime();
+        return e.start < limit ? limit : 0;
+    }
+
+    /* { limit, left (ms) } while the countdown applies, else null */
+    function nightPending(now) {
+        const e = u().entries.find(x => x.end == null);
+        const limit = nightLimit(e);
+        return limit ? { limit, left: limit - (now || Date.now()) } : null;
+    }
+
+    function confirmNight() {
+        const e = u().entries.find(x => x.end == null);
+        if (!current || owner() !== current || !e) return false;
+        e.nightConfirmed = true;
+        log("clock.nightConfirmed", current, null, { date: Utils.isoLocal(Date.now()), time: Utils.clock(Date.now()) });
+        save(); notify();
+        return true;
+    }
+
+    /* Applies the "no answer" rule; returns true when the departure was clocked */
+    function nightCheck(now) {
+        const t = now || Date.now();
+        const p = current && owner() === current ? nightPending(t) : null;
+        if (!p || t < p.limit) return false;
+        const e = u().entries.find(x => x.end == null);
+        e.end = p.limit;
+        e.toCheck = true;
+        e.synced = false;
+        log("clock.nightAutoStop", current, null, { date: Utils.isoLocal(p.limit), time: Utils.clock(p.limit) });
+        notifyUsers(watchersOf(current), "clock.nightAutoStop", { name: (user(current) || {}).name, time: Utils.clock(p.limit) });
+        save(); notify();
+        return true;
+    }
+
+    /* Managers and team leads who follow this person (notifications) */
+    function watchersOf(uid) {
+        return d().users.filter(x => x.id !== uid && x.accountStatus !== "disabled" && typeof Permissions !== "undefined" &&
+            (Permissions.has(x.id, "timeclock.team.view") || Permissions.has(x.id, "timeclock.correction.approve")) &&
+            Permissions.canSeeUser(x.id, uid)).map(x => x.id);
+    }
+
+    /* Favourite clients of the signed-in person */
+    function toggleFavoriteClient(id) {
+        if (!current || !d().clients.some(c => c.id === id)) return false;
+        const list = (u().settings.favoriteClients || []).slice();
+        const i = list.indexOf(id);
+        if (i >= 0) list.splice(i, 1); else list.push(id);
+        u().settings.favoriteClients = list;
+        save(); notify();
+        return i < 0;
+    }
+
+    /* ---------------- Week validation (10/11/2026) ----------------
+       The technician reviews and SENDS a completed week → the team lead validates
+       FIRST (or returns it) → the quality manager OR the director locks it (or
+       returns it): the first of the two decides. Without a team lead covering the
+       person, the week goes straight to the lock. Every step keeps who, when and
+       the comment (history + audit trail); the screens show who took the final
+       decision. A locked week can no longer be corrected (reopen = return it).
+       Statuses: sent → pending_lock → locked; returned (back to the technician). */
+    const WEEK_STATUSES = ["sent", "pending_lock", "locked", "returned"];
+    const weekKey = (y, w) => y * 100 + w;
+
+    function weekRecord(uid, year, week) {
+        return d().weekValidations.find(x => x.userId === uid && x.year === year && x.week === week) || null;
+    }
+
+    function weekValidation(uid, year, week) {
+        const r = weekRecord(uid || owner(), year, week);
+        return r ? copy(r) : null;
+    }
+
+    /* Records visible to the actor: own, then the perimeter of a reviewer / locker */
+    function weekValidations(userId) {
+        const me = current;
+        const follows = allowed("timesheet.week.review") || allowed("timesheet.week.lock");
+        return copy(d().weekValidations).filter(r => (!userId || r.userId === userId) &&
+            (r.userId === me || (follows && (!me || Permissions.canSeeUser(me, r.userId)))))
+            .sort((a, b) => weekKey(b.year, b.week) - weekKey(a.year, a.week));
+    }
+
+    function weekLeadsOf(uid) {
+        if (typeof Permissions === "undefined" || Permissions.has(uid, "timesheet.week.review") || Permissions.has(uid, "timesheet.week.lock")) return [];
+        return d().users.filter(x => x.id !== uid && x.accountStatus !== "disabled" && Permissions.has(x.id, "timesheet.week.review") &&
+            !Permissions.has(x.id, "timesheet.week.lock") && Permissions.canSeeUser(x.id, uid)).map(x => x.id);
+    }
+    const weekLockersOf = uid => usersWith("timesheet.week.lock").filter(id => id !== uid);
+
+    function isLockedDay(uid, ms) {
+        if (typeof Hours === "undefined") return false;
+        const w = Hours.isoWeek(Utils.utcDate(Utils.isoLocal(ms)));
+        const r = weekRecord(uid, w.year, w.week);
+        return !!r && r.status === "locked";
+    }
+
+    /* Previous ISO week of the person (relative to today) */
+    function previousWeek() {
+        const prev = Utils.addDays(Utils.isoLocal(Date.now()), -7);
+        return Hours.isoWeek(Utils.utcDate(prev));
+    }
+
+    /* The week that must be sent before clocking again, or null */
+    function weekToSend() {
+        if (!d().org.weekClosureRequired || typeof Hours === "undefined") return null;
+        const w = previousWeek();
+        const monday = Utils.localDate(Hours.isoDayOf(w.year, w.week, 0)).getTime();
+        const nextMonday = Utils.localDate(Hours.isoDayOf(w.year, w.week, 6)).getTime() + 86400000;
+        const worked = u().entries.some(e => e.start < nextMonday && (e.end == null ? Date.now() : e.end) > monday);
+        if (!worked) return null;
+        const r = weekRecord(owner(), w.year, w.week);
+        return !r || r.status === "returned" ? w : null;
+    }
+
+    function weekStep(r, to, comment, extra) {
+        const from = r.status;
+        r.status = to;
+        r.history = (r.history || []).concat([{ at: new Date().toISOString(), by: current, from, to, comment: comment || "" }]);
+        if (extra) Object.assign(r, extra);
+        log("week." + to, r.userId, { status: from }, { status: to, year: r.year, week: r.week }, comment);
+    }
+
+    /* The technician sends a COMPLETED week (own data). Returns the record or an error code. */
+    function sendWeek(year, week) {
+        if (!current || owner() !== current || !allowed("timeclock.self")) return "forbidden";
+        if (typeof Hours === "undefined") return "forbidden";
+        if (Hours.isoDayOf(year, week, 6) >= Utils.isoLocal(Date.now())) return "notComplete";
+        const existing = weekRecord(current, year, week);
+        if (existing && existing.status !== "returned") return "alreadySent";
+        const s = Hours.weekSummary(Segments.weekSheet(year, week, u().entries, settings(), Date.now()));
+        const r = existing || { id: Utils.uid("wk"), userId: current, year, week, status: "", history: [] };
+        if (!existing) d().weekValidations.push(r);
+        const leads = weekLeadsOf(current);
+        const at = new Date().toISOString();
+        weekStep(r, leads.length ? "sent" : "pending_lock", "", { sentAt: at, sentBy: current, done: s.done, worked: s.worked, goal: s.goal,
+            leadBy: "", leadAt: null, lockedBy: "", lockedAt: null, returnedBy: "", returnedAt: null, comment: "" });
+        const params = { name: (user(current) || {}).name, week: String(week) };
+        notifyUsers(leads.length ? leads : weekLockersOf(current), leads.length ? "week.toReview" : "week.toLock", params);
+        /* 3.0 (8): team lead away → the quality manager / director may validate it directly */
+        if (leads.length && leads.every(id => isAway(id))) notifyUsers(weekLockersOf(current), "week.toLock", params);
+        save(); notify();
+        return copy(r);
+    }
+
+    /* Team lead: "validate" (→ waiting for the lock) or "return" (comment required) */
+    function reviewWeek(id, decision, comment) {
+        const r = d().weekValidations.find(x => x.id === id);
+        if (!r) return "notFound";
+        if (!current || r.userId === current) return "ownWeek";
+        if (!allowed("timesheet.week.review") || !Permissions.canSeeUser(current, r.userId)) return "forbidden";
+        if (r.status !== "sent") return "notWaiting";
+        const c = String(comment || "").trim();
+        if (decision === "return" && !c) return "commentRequired";
+        const params = { name: (user(current) || {}).name, week: String(r.week), owner: (user(r.userId) || {}).name };
+        const lockers = weekLockersOf(r.userId);
+        if (decision === "validate" && lockers.length && lockers.every(id => isAway(id))) {
+            /* 3.0 (9): quality manager AND director away → the team lead's validation is final */
+            const at = new Date().toISOString();
+            weekStep(r, "locked", c, { leadBy: current, leadAt: at, lockedBy: current, lockedAt: at, replacement: true });
+            notifyUsers([r.userId], "week.locked", params);
+            notifyUsers(lockers, "week.lockedInAbsence", { name: params.name, week: params.week, owner: params.owner });
+        } else if (decision === "validate") {
+            weekStep(r, "pending_lock", c, { leadBy: current, leadAt: new Date().toISOString() });
+            notifyUsers([r.userId], "week.validated", params);
+            notifyUsers(lockers, "week.toLock", { name: params.owner, week: params.week });
+        } else if (decision === "return") {
+            weekStep(r, "returned", c, { returnedBy: current, returnedAt: new Date().toISOString(), comment: c });
+            notifyUsers([r.userId], "week.returned", params);
+        } else return "badDecision";
+        save(); notify();
+        return true;
+    }
+
+    /* Quality manager OR director: "lock" (final decision) or "return" (comment required).
+       A locked week can also be returned (reopened) by them, with a comment. */
+    function lockWeek(id, decision, comment) {
+        const r = d().weekValidations.find(x => x.id === id);
+        if (!r) return "notFound";
+        if (!current || r.userId === current) return "ownWeek";
+        if (!allowed("timesheet.week.lock") || !Permissions.canSeeUser(current, r.userId)) return "forbidden";
+        const c = String(comment || "").trim();
+        const params = { name: (user(current) || {}).name, week: String(r.week) };
+        if (decision === "lock") {
+            /* 3.0 (8): a week still waiting for an ABSENT team lead can be locked directly */
+            const leadAway = r.status === "sent" && weekLeadsOf(r.userId).every(id => isAway(id));
+            if (r.status !== "pending_lock" && !leadAway) return "notWaiting";
+            weekStep(r, "locked", c, { lockedBy: current, lockedAt: new Date().toISOString(), unlockRequest: null, replacement: leadAway || undefined });
+            notifyUsers([r.userId, r.leadBy], "week.locked", params);
+        } else if (decision === "return") {
+            if (["sent", "pending_lock", "locked"].indexOf(r.status) < 0) return "notWaiting";
+            if (!c) return "commentRequired";
+            weekStep(r, "returned", c, { returnedBy: current, returnedAt: new Date().toISOString(), comment: c, lockedBy: "", lockedAt: null, unlockRequest: null });
+            notifyUsers([r.userId, r.leadBy], "week.returned", params);
+        } else return "badDecision";
+        save(); notify();
+        return true;
+    }
+
+    /* 3.0 (7): the team lead asks the quality manager / director to unlock a locked week */
+    function requestUnlock(id, comment) {
+        const r = d().weekValidations.find(x => x.id === id);
+        if (!r) return "notFound";
+        if (!current || !allowed("timesheet.week.review") || allowed("timesheet.week.lock") || !Permissions.canSeeUser(current, r.userId)) return "forbidden";
+        if (r.status !== "locked" || r.unlockRequest) return "notWaiting";
+        const c = String(comment || "").trim();
+        if (!c) return "commentRequired";
+        r.unlockRequest = { by: current, at: new Date().toISOString(), comment: c };
+        log("week.unlockAsked", r.userId, null, { year: r.year, week: r.week }, c);
+        notifyUsers(weekLockersOf(r.userId), "week.unlockAsked", { name: (user(current) || {}).name, week: String(r.week), owner: (user(r.userId) || {}).name });
+        save(); notify();
+        return true;
     }
 
     /* ---------------- Rights checks in the business logic (2.8) ----------------
@@ -1051,14 +1810,20 @@ const Store = (() => {
     /* ---------------- Individual rights (grants) ---------------- */
     function grants() { return copy(d().grants); }
 
+    /* Period of a grant or an access request: permanent, or temporary with a valid end date */
+    function periodOf(fields) {
+        const kind = fields.kind === "temporary" ? "temporary" : "permanent";
+        const start = fields.start || Utils.isoLocal(Date.now());
+        return { kind, start, valid: kind !== "temporary" || (!!fields.end && fields.end >= start) };
+    }
+
     /* Grants a permission. Refused: no "permissions.manage", granting to
        yourself, unknown permission, temporary without a valid end date. */
     function grant(fields) {
         if (!allowed("permissions.manage") || fields.userId === current) return null;
         if (!Store.user(fields.userId) || Permissions.ALL.indexOf(fields.permission) < 0) return null;
-        const kind = fields.kind === "temporary" ? "temporary" : "permanent";
-        const start = fields.start || Utils.isoLocal(Date.now());
-        if (kind === "temporary" && (!fields.end || fields.end < start)) return null;
+        const { kind, start, valid } = periodOf(fields);
+        if (!valid) return null;
         const g = { id: Utils.uid("gr"), userId: fields.userId, permission: fields.permission, kind, start, end: kind === "temporary" ? fields.end : "",
             grantedBy: current, grantedAt: new Date().toISOString(), reason: String(fields.reason || ""), requestId: fields.requestId || "",
             revokedAt: null, revokedBy: "", revokeReason: "" };
@@ -1101,17 +1866,21 @@ const Store = (() => {
         if (Permissions.ALL.indexOf(fields.permission) < 0) return "unknownPermission";
         if (!String(fields.reason || "").trim()) return "reasonRequired";
         if (Permissions.has(current, fields.permission)) return "alreadyGranted";
-        const kind = fields.kind === "temporary" ? "temporary" : "permanent";
-        const start = fields.start || Utils.isoLocal(Date.now());
-        if (kind === "temporary" && (!fields.end || fields.end < start)) return "badDates";
+        const { kind, start, valid } = periodOf(fields);
+        if (!valid) return "badDates";
         const r = { id: Utils.uid("ar"), userId: current, permission: fields.permission, kind, reason: String(fields.reason).trim(),
             requestedAt: new Date().toISOString(), start, end: kind === "temporary" ? fields.end : "", status: "pending",
             decidedBy: "", decidedAt: null, decisionComment: "", grantId: "", exchanges: [] };
         d().accessRequests.push(r);
         log("access.requested", current, null, { permission: r.permission, kind, start, end: r.end }, r.reason);
-        notifyUsers(usersWith("permissions.manage"), "access.requested", { permission: r.permission, name: (Store.user(current) || {}).name });
+        notifyAccessManagers(r);
         save(); notify();
         return copy(r);
+    }
+
+    /* The people who decide access requests are told about a new (or answered) request */
+    function notifyAccessManagers(r) {
+        notifyUsers(usersWith("permissions.manage"), "access.requested", { permission: r.permission, name: (user(current) || {}).name });
     }
 
     /* decision: "approved" | "rejected" | "info_requested". A different period
@@ -1150,7 +1919,7 @@ const Store = (() => {
         r.exchanges.push({ at: new Date().toISOString(), by: current, text: String(text).trim(), status: "pending" });
         r.status = "pending";
         log("access.answered", current, { status: "info_requested" }, { status: "pending" }, text);
-        notifyUsers(usersWith("permissions.manage"), "access.requested", { permission: r.permission, name: (Store.user(current) || {}).name });
+        notifyAccessManagers(r);
         save(); notify();
         return true;
     }
@@ -1176,7 +1945,7 @@ const Store = (() => {
     }
 
     function exportAll() {
-        if (!allowed("users.manage")) return null;
+        if (!allowed("backups.manage")) return null;
         const at = new Date().toISOString();
         log("backup.exported", "full");
         save();
@@ -1186,10 +1955,18 @@ const Store = (() => {
             manifest: { counts: countsOf(content), fingerprint: fingerprint(body) }, data: content }, null, 2);
     }
 
+    /* Date of the last FULL backup (audit trail), or null — shown on the quality dashboard */
+    function lastFullBackup() {
+        const a = d().audit.filter(x => x.action === "backup.exported").sort((x, y) => y.at.localeCompare(x.at))[0];
+        return a ? a.at : null;
+    }
+
     /* Imports and exports are traced (mission part 12): what = "timesheet",
        "report", "audit", "leave", "clients", "register"…, detail = format/period */
     function recordExport(what, detail) { log("export.done", what, null, { detail: detail || "" }); save(); }
     function recordImport(what, count, detail) { log("import.done", what, null, { count: count || 0, detail: detail || "" }); save(); }
+    /* 4.5.1: summary of the last Excel register import, kept in the data of the account shown (withUser) */
+    function setLastImport(summary) { u().lastImport = Object.assign({ at: new Date().toISOString(), by: current }, summary); save(); }
 
     /* ---------------- Local storage use (precision 3) ----------------
        Browsers give each site about 5 MB of localStorage (not guaranteed,
@@ -1201,98 +1978,121 @@ const Store = (() => {
         keys.forEach(k => {
             const size = (k.length + (StorageAdapter.get(k) || "").length) * 2;   /* UTF-16: 2 bytes per character */
             total += size;
-            if (k.indexOf("acp_backup_") === 0 || k === KEY_V3 || k === KEY_V2 || k === KEY_V1) backups += size;
+            if (k.indexOf("acp_backup_") === 0 || k === KEY_V4 || k === KEY_V3 || k === KEY_V2 || k === KEY_V1) backups += size;
         });
         return { bytes: total, backupBytes: backups, quotaEstimate: QUOTA_ESTIMATE, ratio: total / QUOTA_ESTIMATE };
     }
 
     /* Safety copies kept on the device (before migration / restore, old versions) */
     function localBackups() {
-        return StorageAdapter.keys().filter(k => k.indexOf("acp_backup_") === 0 || k === KEY_V3 || k === KEY_V2 || k === KEY_V1)
+        return StorageAdapter.keys().filter(k => k.indexOf("acp_backup_") === 0 || k === KEY_V4 || k === KEY_V3 || k === KEY_V2 || k === KEY_V1)
             .map(k => ({ key: k, bytes: (StorageAdapter.get(k) || "").length * 2 })).sort((a, b) => b.key.localeCompare(a.key));
     }
 
     /* Removes ONE safety copy on explicit request of an administrator (traced) */
     function removeLocalBackup(key) {
-        if (!allowed("users.manage") || !localBackups().some(b => b.key === key)) return false;
+        if (!allowed("backups.manage") || !localBackups().some(b => b.key === key)) return false;
         StorageAdapter.remove(key);
         log("backup.copyRemoved", key);
         save();
         return true;
     }
 
-    /* Restore TEST on a copy (precision 3): the file is read, migrated and
-       checked IN MEMORY; nothing is written, the data of the device is not
-       touched. Counts are compared with what the file declares. */
-    function testRestore(text) {
+    /* Checks a full backup WITHOUT applying it:
+       { ok, error, version, users, errors, warnings, anomalies, candidate }.
+       ERRORS (forged or inconsistent data, modified file) forbid the restore;
+       WARNINGS are shown in the preview. A file of the current schema is checked
+       as it IS (raw: an unknown role is not silently turned into "technician");
+       an older file is checked after its conversion. */
+    function inspectFull(text) {
+        let read;
+        try { read = JSON.parse(text); } catch (e) { return { ok: false, error: "notJson" }; }
+        if (!read || read.kind !== "full" || !read.data || !Array.isArray(read.data.users)) return { ok: false, error: "notFull" };
+        if (Number(read.version) > FORMAT_VERSION) return { ok: false, error: "tooNew" };
+        const ver = Number(read.version) || 3;
+        const candidate = ver >= 5 ? normalise(read.data) : migrateTo5(ver >= 4 ? read.data : migrateTo4(read.data, ver), ver);
+        const checked = Validation.data(ver >= 5 ? read.data : candidate);
+        const errors = checked.errors.slice(), warnings = checked.warnings.slice();
+        if (read.manifest) {   /* declared at export time (2.8): any difference = damaged or modified file */
+            if (read.manifest.fingerprint !== fingerprint(JSON.stringify(read.data))) errors.unshift("backup.fingerprintMismatch");
+            const now = countsOf(read.data);
+            Object.keys(read.manifest.counts || {}).forEach(k => { if (now[k] !== read.manifest.counts[k]) errors.unshift("backup.countMismatch:" + k); });
+        } else warnings.push("backup.noManifest");   /* backup made before 2.8: cannot be fully checked */
+        return { ok: true, version: Number(read.version), users: candidate.users.length, errors, warnings, anomalies: errors.concat(warnings), candidate };
+    }
+
+    /* Refused restore: kept in the audit trail (who, when, why) */
+    function restoreRefused(scope, reason, codes) {
+        log("backup.restoreRefused", current, null, { scope, reason, errors: codes ? codes.slice(0, 20) : undefined });
+        save();
+    }
+
+    /* PREVIEW of a full restore (managers with "backups.manage"): writes NOTHING.
+       Compares the file with the data of the device: counts, accounts that would
+       appear or disappear, role changes, team rules changed, approved leave. */
+    function previewRestore(text) {
+        if (!allowed("backups.manage")) return { ok: false, error: "forbidden" };
         const r = inspectFull(text);
         if (!r.ok) return r;
         const read = JSON.parse(text);
         const inFile = read.manifest && read.manifest.counts ? read.manifest.counts : countsOf(read.data);
         const restored = countsOf(r.candidate);
         const lost = Object.keys(inFile).filter(k => restored[k] < inFile[k]);
-        const blocking = r.anomalies.filter(a => a !== "backup.noManifest");
-        return { ok: true, version: r.version, inFile, restored, lost, anomalies: r.anomalies, sound: !lost.length && !blocking.length };
+        const now = countsOf(d());
+        const mapOf = list => new Map(list.map(x => [x.id, x]));
+        const cur = mapOf(d().users), nxt = mapOf(r.candidate.users);
+        const approved = x => Object.values(x.perUser || {}).reduce((n, v) => n + (v.requests || []).filter(q => q.status === "approved").length, 0);
+        const diff = {
+            counts: {}, approved: { now: approved(d()), file: approved(r.candidate) },
+            users: {
+                added: r.candidate.users.filter(x => !cur.has(x.id)).map(x => x.name),
+                removed: d().users.filter(x => !nxt.has(x.id)).map(x => x.name),
+                roleChanged: r.candidate.users.filter(x => cur.has(x.id) && cur.get(x.id).role !== x.role).map(x => ({ name: x.name, from: cur.get(x.id).role, to: x.role }))
+            },
+            org: { changed: Object.keys(Object.assign({}, d().org, r.candidate.org)).filter(k => JSON.stringify(d().org[k]) !== JSON.stringify(r.candidate.org[k])) }
+        };
+        Object.keys(restored).forEach(k => { diff.counts[k] = { now: now[k], file: restored[k] }; });
+        return { ok: true, version: r.version, inFile, restored, lost, errors: r.errors, warnings: r.warnings, anomalies: r.anomalies,
+            sound: !r.errors.length && !lost.length, diff };
     }
 
-    /* Checks a full backup WITHOUT applying it: { ok, error, version, users, anomalies } */
-    function inspectFull(text) {
-        let read;
-        try { read = JSON.parse(text); } catch (e) { return { ok: false, error: "notJson" }; }
-        if (!read || read.kind !== "full" || !read.data || !Array.isArray(read.data.users)) return { ok: false, error: "notFull" };
-        if (Number(read.version) > FORMAT_VERSION) return { ok: false, error: "tooNew" };
-        const candidate = Number(read.version) >= 4 ? normalise(read.data) : migrateTo4(read.data, Number(read.version) || 3);
-        const anomalies = verify(candidate);
-        if (read.manifest) {   /* declared at export time (2.8): any difference = damaged or modified file */
-            if (read.manifest.fingerprint !== fingerprint(JSON.stringify(read.data))) anomalies.unshift("backup.fingerprintMismatch");
-            const now = countsOf(read.data);
-            Object.keys(read.manifest.counts || {}).forEach(k => { if (now[k] !== read.manifest.counts[k]) anomalies.unshift("backup.countMismatch:" + k); });
-        } else anomalies.push("backup.noManifest");   /* backup made before 2.8: cannot be fully checked */
-        return { ok: true, version: Number(read.version), users: candidate.users.length, anomalies, candidate };
-    }
-
-    /* Replaces ALL the data of the device by a full backup. The current data
-       is first copied to a backup key (verified); returns that key or an error. */
+    /* Replaces ALL the data of the device by a full backup. Order: right ("backups.manage",
+       checked here, not only in the screen) → strict validation → verified safety copy of the
+       current data → replacement → audit event. Any refusal is journalised and changes nothing.
+       Returns { ok, backupKey, anomalies } or { ok: false, error }. */
     function importAll(text) {
-        if (!allowed("users.manage")) return { ok: false, error: "forbidden" };
+        if (!allowed("backups.manage")) { restoreRefused("full", "forbidden"); return { ok: false, error: "forbidden" }; }
         const r = inspectFull(text);
-        if (!r.ok) return { ok: false, error: r.error };
+        if (!r.ok) { restoreRefused("full", r.error); return { ok: false, error: r.error }; }
+        if (r.errors.length) { restoreRefused("full", "invalidData", r.errors); return { ok: false, error: "invalidData", errors: r.errors }; }
         const previous = JSON.stringify(d());
         const key = "acp_backup_before_restore_" + new Date().toISOString().replace(/[:.]/g, "-");
-        if (!StorageAdapter.set(key, previous) || StorageAdapter.get(key) !== previous) return { ok: false, error: "backupFailed" };
+        if (!StorageAdapter.set(key, previous) || StorageAdapter.get(key) !== previous) { restoreRefused("full", "backupFailed"); return { ok: false, error: "backupFailed" }; }
         const by = current;
         data = r.candidate;
         if (!data.users.some(u => u.id === current)) current = "";
         data.audit.push({ id: Utils.uid("au"), at: new Date().toISOString(), by, action: "backup.restored", target: "full",
-            before: { backupKey: key }, after: { users: r.users }, reason: r.anomalies.join(" | ") });
+            before: { backupKey: key }, after: { users: r.users, result: "ok", warnings: r.warnings.length }, reason: r.warnings.join(" | ") });
         save(); notify();
         return { ok: true, backupKey: key, anomalies: r.anomalies };
     }
 
-    /* ---------------- Synchronisation (connection point) ---------------- */
-
-    function pendingSync() {
-        return u().entries.filter(e => e.end != null && !e.synced).length;
-    }
-
-    /* ⚠️ No server yet. */
-    function sync() {
-        return Promise.resolve({ ok: false, reason: "noServer" });
-    }
-
     return {
-        load, onChange, batch, readFailed: () => readFailed, migrateV1, migrateV2, SEED_USERS,
-        users, user, addUser, updateUser, setCurrentUser, currentUserId, withUser, ROLES,
+        load, onChange, batch, readFailed: () => readFailed, users, user, addUser, updateUser, setCurrentUser, currentUserId, withUser, ROLES,
         grants, grant, revokeGrant, accessRequests, requestAccess, decideAccess, answerAccess,
         notifications, markNotificationsRead,
-        sections, addSection, renameSection, verify: () => verify(), migrationReport: () => migrationReport,
-        log, persist: () => save(), recordExport, recordImport, auditTrail, auditQuery, exportAll, inspectFull, importAll, testRestore, storageUsage, localBackups, removeLocalBackup,
+        sections, addSection, renameSection, removeSection, verify: () => verify(), migrationReport: () => migrationReport,
+        log, persist: () => save(), recordExport, recordImport, setLastImport, lastImport: () => copy(u().lastImport || null), auditTrail, auditQuery, exportAll, inspectFull, importAll, previewRestore, testRestore: previewRestore, storageUsage, localBackups, removeLocalBackup,
         profile, updateProfile, settings, updateSettings, DEFAULT_SETTINGS, org, updateOrg, DEFAULT_ORG,
         clients, client, addClient, updateClient, deleteClient,
         entries, entry, runningEntry, addEntry, updateEntry, deleteEntry, declareHomeDay,
+        startClock, stopClock, undoClock, undoLeft, nightPending, confirmNight, nightCheck, toggleFavoriteClient, absenceToday: () => copy(absenceToday()),
+        WEEK_STATUSES, weekValidation, weekValidations, weekToSend, previousWeek, sendWeek, reviewWeek, lockWeek, weekLeadsOf,
         dayBlock, correctDay, requestCorrection, correctionRequests, closeCorrection,
-        requests, addRequest, addApprovedRequest, allRequests, decideRequest, deleteRequest, absencesOn,
-        exportJson, importJson, pendingSync, sync,
-        lastBackupAt: () => u().lastBackupAt
+        REQUEST_STATUSES, isOpenRequest, leadsOf, updateDraft, submitRequest, reviewRequest, cancelRequest,
+        canDecideLeave, noticeOf, requestCancellation, decideCancellation, requestCarryOver, carryOver, leaveMovements,
+        isAway, setAway, requestUnlock, requestDeletion, askPasswordUnlock, clearPasswordUnlock, resetPassword, passwordResetters, requests, addRequest, addApprovedRequest, allRequests, decideRequest, deleteRequest, absencesOn,
+        exportJson, importJson, lastPersonalRestore, REQUEST_TYPES, LEGACY_SETTINGS_KEYS,
+        lastFullBackup
     };
 })();

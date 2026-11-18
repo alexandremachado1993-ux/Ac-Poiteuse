@@ -21,7 +21,10 @@ const I18n = (() => {
     const LOCALES = { fr: "fr-FR", en: "en-GB", es: "es-ES", de: "de-DE" };
     const NAMES = { fr: "Français", en: "English", es: "Español", de: "Deutsch" };
 
+    let forced = null;   /* 4.4: language of a document being built (withLanguage) */
+
     function language() {
+        if (forced) return forced;
         let stored = null;
         stored = StorageAdapter.get(STORAGE_KEY);
         if (stored && LOCALES[stored]) return stored;
@@ -33,6 +36,13 @@ const I18n = (() => {
         if (!LOCALES[code]) return;
         StorageAdapter.set(STORAGE_KEY, code);
         if (reload !== false) window.location.reload();
+    }
+
+    /* 4.4: builds something (an exported document) in another language, without changing the app's */
+    function withLanguage(code, fn) {
+        const before = forced;
+        forced = LOCALES[code] ? code : before;
+        try { return fn(); } finally { forced = before; }
     }
 
     function locale() {
@@ -75,5 +85,5 @@ const I18n = (() => {
             code.toUpperCase() + " — " + NAMES[code] + "</option>").join("");
     }
 
-    return { LANGUAGES, NAMES, language, setLanguage, locale, t, tIn, allTranslations, apply, optionsHtml };
+    return { LANGUAGES, NAMES, language, setLanguage, withLanguage, locale, t, tIn, allTranslations, apply, optionsHtml };
 })();

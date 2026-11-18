@@ -53,5 +53,8 @@ const StorageAdapter = (() => {
         return out;
     }
 
-    return { NAME, get, set, remove, keys };
+    /* 4.7: "local" (this device) — becomes "server" with the company server adapter (status of the menu) */
+    const mode = "local";
+
+    return { NAME, mode, get, set, remove, keys };
 })();

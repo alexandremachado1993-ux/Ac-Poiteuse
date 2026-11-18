@@ -29,14 +29,16 @@ function makeTimesheet(options) {
     /* Rights on this sheet (06/11/2026): corrections and imports by managers
        only, technicians and team leads report an error instead. */
     const ownerId = () => (options.userId ? options.userId() : Store.currentUserId());
-    const canCorrect = () => !readOnly && Permissions.can("timesheet.correct.approve");
+    const canCorrect = () => !readOnly && Permissions.can("timeclock.correction.approve");
     /* imports write into the data of the account SHOWN (inContext): a manager
        imports a technician's register from that technician's file */
-    const canImport = () => Permissions.can("timesheet.correct.approve");
-    const canReport = () => !canCorrect() && Permissions.can("timesheet.correct.request");
+    const canImport = () => Permissions.can("timeclock.correction.approve");
+    const canReport = () => !canCorrect() &&
+        Permissions.can(ownerId() === Store.currentUserId() ? "timeclock.report_issue" : "timeclock.correction.request");
     let root = null;
     let message = { cls: "", text: "" };
-    let pendingSheets = null;   /* several register sheets found in an Excel file: user chooses one */
+    let pendingSheets = null;   /* register sheets found in an Excel file, waiting for "Validate the import" */
+    let preview = null;         /* 4.5.1: { index, analysis } — pre-validation of the chosen sheet, nothing written yet */
     const state = { mode: "week", year: 0, week: 0, monthYear: 0, month: 0, openDay: null, ready: false };
 
     /* Runs fn in the context of the account shown (admin view) */
@@ -109,9 +111,7 @@ function makeTimesheet(options) {
             "<div><span>" + E(t("sheet.goal")) + "</span><strong>" + Utils.hours(s.goal) + "</strong><small>" +
             E(s.homeDays ? t("sheet.goalHome", { base: Utils.hours(s.contractGoal), n: s.homeDays, minus: Utils.hours(s.homeReduction) }) : t("sheet.goalFull")) + "</small></div>" +
             "<div><span>" + E(t("sheet.done")) + "</span><strong>" + Utils.hours(s.done) + "</strong><small>" + E(parts.join(" + ")) + "</small></div>" +
-            "<div><span>" + E(t("sheet.result")) + '</span><strong class="' + (s.toRecover < 0 ? "negative" : "positive") + '">' +
-            E(Countdown.parts(s.toRecover).value) + '</strong><span class="figure-label ' + (s.toRecover < 0 ? "negative" : "positive") + '">' +
-            E(Countdown.parts(s.toRecover).label) + "</span><small>" + E(t("countdown.start", { base: Utils.hours(-s.goal) })) + "</small></div>" +
+            Countdown.figureHtml(s, t("sheet.result")) +
             '</div><div class="bar"><div style="width:' + pct.toFixed(1) + '%"></div></div>' +
             '<table class="table"><tbody>' +
             line(t("sheet.l.clocked"), Utils.hours(c.clocked)) +
@@ -127,6 +127,11 @@ function makeTimesheet(options) {
                 ? line(t("sheet.ot25", { from: Math.round(o.overtime25From) + 1, to: Math.round(o.overtime50From) }), Utils.hours(s.overtime.h25)) +
                   line(t("sheet.ot50", { from: Math.round(o.overtime50From) + 1 }), Utils.hours(s.overtime.h50))
                 : "") +
+            /* 3.0: value of the week like the managers' register "OK" */
+            (o.hoursMethod !== "countdown" ? row("<strong>" + E(t(s.register.paid ? "week.valuedPaid" : "week.valuedBank")) + "</strong>",
+                "<strong>" + Utils.hours(s.register.valued) + "</strong>") +
+                line(t("sheet.l.registerGoal", { cumul: Utils.hours(s.register.cumul), goal: Utils.hours(s.register.goal) }), Utils.hours(Math.max(0, s.register.extra)), "indent") +
+                (s.register.absencePay > 0 ? line(t("sheet.l.urgentPaid"), Utils.hours(s.register.absencePay), "indent") : "") : "") +
             "</tbody></table>" +
             (cr.timeOff > 0 ? '<p class="info">' + E(t("sheet.timeOffInfo", { value: Utils.hours(cr.timeOff) })) + "</p>" : "") +
             (s.complete ? "" : '<p class="info">' + E(t("sheet.weekInProgress")) + "</p>") + "</div>";
@@ -143,6 +148,8 @@ function makeTimesheet(options) {
             Utils.hours(c.night) + '</td><td class="num">+' + Utils.hours(s.premiumNight) + " <small>(" + pct(o.nightRate) + ")</small></td></tr>" +
             "<tr><td>" + E(t("sheet.c.holidayWorked")) + '</td><td class="num">' + Utils.hours(c.holidayWorked) +
             '</td><td class="num">+' + Utils.hours(s.premiumHoliday) + " <small>(" + pct(o.holidayRate) + ")</small></td></tr>" +
+            (c.absenceWorked > 0 ? "<tr><td>" + E(t("sheet.c.absenceWorked")) + '</td><td class="num">' + Utils.hours(c.absenceWorked) +
+                '</td><td class="num">+' + Utils.hours(s.premiumAbsence) + " <small>(" + pct(o.absenceWorkedRate) + ")</small></td></tr>" : "") +
             "<tr><td>" + E(t("sheet.c.sunday")) + '</td><td class="num">' + Utils.hours(c.sunday) + '</td><td class="num">—</td></tr>' +
             "</tbody></table>" +
             '<p class="info">' + E(t("sheet.countersInfo")) + "</p>" +
@@ -192,7 +199,9 @@ function makeTimesheet(options) {
         const anomalies = Segments.anomalies(entries, now).filter(a =>
             a.entry.start < weekEnd && (a.entry.end == null ? now : a.entry.end) > weekStart);
 
-        return '<div class="card printable"><h2>' + E(t("sheet.weekTitle", { n: state.week, from: Utils.dateDmy(sheet.days.monday.iso), to: Utils.dateDmy(sheet.days.sunday.iso) })) + "</h2>" +
+        return weekFlowHtml(s) +
+            '<div class="card printable"><h2>' + E(t("sheet.weekTitle", { n: state.week, from: Utils.dateDmy(sheet.days.monday.iso), to: Utils.dateDmy(sheet.days.sunday.iso) })) + "</h2>" +
+            '<div style="margin-bottom:1rem">' + UI.weekBars(sheet) + UI.weekLegend() + "</div>" +
             '<div class="scroll"><table class="table sheet"><thead><tr><th>' + E(t("sheet.col.day")) + '</th><th class="num">' + E(t("sheet.col.clocked")) +
             '</th><th class="num">' + E(t("sheet.col.lunch")) + '</th><th class="num">' + E(t("sheet.col.dayTotal")) +
             '</th><th class="num">' + E(t("sheet.col.night")) + "</th><th>" + E(t("sheet.col.detail")) + "</th></tr></thead><tbody>" + dayRows + "</tbody></table></div></div>" +
@@ -206,6 +215,23 @@ function makeTimesheet(options) {
             reportsHtml() +
             totalsTable(t("sheet.byClient"), byClient) +
             totalsTable(t("sheet.byActivity"), byActivity, labels, colors);
+    }
+
+    /* Week validation (2.9): the 3 steps with who decided; the person who clocks
+       sends a completed week from here, the reviewers open the decision sheet. */
+    function weekFlowHtml(s) {
+        const uid = ownerId();
+        if (!Permissions.has(uid, "timeclock.self") && !Store.weekValidation(uid, state.year, state.week)) return "";
+        const r = Store.weekValidation(uid, state.year, state.week);
+        const mine = uid === Store.currentUserId();
+        const canSend = mine && s.complete && (!r || r.status === "returned") && Permissions.can("timeclock.self");
+        const canDecide = !mine && r && (Permissions.can("timesheet.week.review") || Permissions.can("timesheet.week.lock"));
+        return '<div class="card"><div class="title-row"><h2>' + E(t("week.flowTitle", { week: state.week })) + "</h2>" + ValidationPage.badgeOf(r) +
+            '<div class="actions">' + (canSend ? '<button type="button" class="button primary" data-send-week>' + UI.icon("send") + E(t("week.review")) + "</button>" : "") +
+            (canDecide ? '<button type="button" class="button" data-open-week="' + E(r.id) + '">' + E(t("week.open")) + "</button>" : "") + "</div></div>" +
+            ValidationPage.flowHtml(r, uid) +
+            (r && r.status === "returned" ? '<p class="banner warn" style="margin:1rem 0 0">' + E(t("week.returnedInfo", { name: (Store.user(r.returnedBy) || {}).name || "", comment: r.comment })) + "</p>" : "") +
+            (!s.complete && mine ? '<p class="info" style="margin:.8rem 0 0">' + E(t("week.notCompleteInfo")) + "</p>" : "") + "</div>";
     }
 
     /* Error reports of the account shown (open first, then the 8 latest) */
@@ -283,8 +309,58 @@ function makeTimesheet(options) {
     function importRegister(sheet) {
         const r = inContext(() => RegisterImport.importSheet(sheet));
         Store.recordImport("register", r.days || 0, (Store.user(ownerId()) || {}).name);
-        message = { cls: r.days || r.timeOff ? "success" : "error", text: RegisterImport.message(r) };
+        /* 4.5.1: the sentence describing the import stays on the sheet (until the next import) */
+        if (r.days || r.timeOff) {
+            inContext(() => Store.setLastImport({ sheet: sheet.name, days: r.days, from: r.from, to: r.to, minutes: r.minutes,
+                timeOff: r.timeOff, toCheck: r.toCheck, duplicates: r.duplicates }));
+            message = { cls: "", text: "" };
+        } else message = { cls: "error", text: RegisterImport.message(r) };
         render();
+    }
+
+    /* 4.5.1: pre-validation of a register sheet (nothing is written before "Validate the import") */
+    function analyseSheet(index) {
+        preview = { index, analysis: inContext(() => RegisterImport.analyse(pendingSheets[index])) };
+    }
+
+    function previewHtml() {
+        const a = preview.analysis;
+        const D = Utils.dateDmy, H = min => Utils.hm(min * 60000);
+        const box = (n, label) => "<div><b>" + E(n) + "</b><small>" + E(t(label)) + "</small></div>";
+        const months = Object.keys(a.months).sort();
+        const sum = months.reduce((s, k) => { const m = a.months[k]; ["days", "work", "travel", "timeOff", "toCheck"].forEach(f => { s[f] += m[f]; }); return s; },
+            { days: 0, work: 0, travel: 0, timeOff: 0, toCheck: 0 });
+        const row = (label, m, cls) => "<tr" + (cls ? ' class="' + cls + '"' : "") + "><td>" + E(label) + '</td><td class="n">' + m.days + '</td><td class="n">' + H(m.work) +
+            '</td><td class="n">' + H(m.travel) + '</td><td class="n">' + H(m.work + m.travel) + '</td><td class="n">' + m.timeOff + '</td><td class="n">' + m.toCheck + "</td></tr>";
+        const nothing = !a.days && !a.timeOff;
+        return '<div class="reg-preview">' +
+            "<h3>" + E(t("reg.pv.title", { name: a.name })) + "</h3>" +
+            '<p class="info">' + E(a.from ? t("reg.pv.period", { from: D(a.from), to: D(a.to) }) : t("reg.pv.empty")) + " " + E(t("reg.pv.nothingSaved")) + "</p>" +
+            (nothing ? "" : '<div class="reg-kv">' + box(a.days, "reg.pv.days") + box(H(a.work + a.travel), "reg.pv.hours") +
+                box(a.timeOff, "reg.pv.timeOff") + box(a.duplicates, "reg.pv.duplicates") + "</div>" +
+                '<div class="scroll"><table class="table reg-months"><thead><tr><th>' + E(t("sheet.month")) + '</th><th class="n">' + E(t("reg.pv.colDays")) +
+                '</th><th class="n">' + E(t("cat.work")) + '</th><th class="n">' + E(t("reg.pv.colTravel")) + '</th><th class="n">' + E(t("common.total")) +
+                '</th><th class="n">' + E(t("rep.col.timeOff")) + '</th><th class="n">' + E(t("sheet.toCheck")) + "</th></tr></thead><tbody>" +
+                months.map(k => row(Utils.monthName(+k.slice(5) - 1) + " " + k.slice(0, 4), a.months[k])).join("") +
+                row(t("common.total"), sum, "total") + "</tbody></table></div>") +
+            (a.toCheck.length ? '<p class="reg-warn">' + E(t("reg.pv.toCheck", { n: a.toCheck.length })) + "<br>" +
+                ["span", "noStart"].map(r => { const days = a.toCheck.filter(x => x.reasons.indexOf(r) >= 0).map(x => D(x.iso).slice(0, 5));
+                    return days.length ? "<b>" + E(t("reg.pv.reason." + r)) + "</b> : " + E(days.join(", ")) : ""; }).filter(Boolean).join("<br>") + "</p>" : "") +
+            (a.overlaps ? '<p class="reg-warn">' + E(t("reg.pv.overlaps", { n: a.overlaps })) + "</p>" : "") +
+            (a.future ? '<p class="info">' + E(t("reg.pv.future", { n: a.future })) + "</p>" : "") +
+            '<div class="actions"><button type="button" class="button primary" data-act="sheetImport"' + (nothing ? " disabled" : "") + ">" + UI.icon("check") + E(t("reg.pv.confirm")) + "</button>" +
+            '<button type="button" class="button secondary" data-act="sheetCancel">' + E(t("common.cancel")) + "</button></div></div>";
+    }
+
+    /* 4.5.1: last register import of the account shown, kept until the next one */
+    function lastImportHtml() {
+        const x = inContext(() => Store.lastImport());
+        if (!x) return "";
+        const at = new Date(x.at);
+        const by = (Store.user(x.by) || {}).name || "—";
+        return '<div class="reg-last">' + UI.icon("check") + "<div><b>" + E(t("reg.last.title", { date: Utils.dateDmy(Utils.isoLocal(at.getTime())), time: Utils.clock(at.getTime()), name: by })) +
+            "</b><br>" + E(t("reg.last.body", { sheet: x.sheet, days: x.days, from: x.from ? Utils.dateDmy(x.from) : "—", to: x.to ? Utils.dateDmy(x.to) : "—",
+                hours: Utils.hm((x.minutes || 0) * 60000), timeOff: x.timeOff || 0, toCheck: x.toCheck || 0, dup: x.duplicates || 0 })) + "</div></div>";
     }
 
     /* Default choice: the sheet used most recently (latest day with working
@@ -306,8 +382,8 @@ function makeTimesheet(options) {
         f.arrayBuffer().then(XlsxReader.read).then(sheets => {
             const found = RegisterImport.registerSheets(sheets);
             if (!found.length) { message = { cls: "error", text: t("reg.noRegister") }; render(); return; }
-            if (found.length === 1) { importRegister(found[0]); return; }
-            pendingSheets = found;
+            pendingSheets = found;   /* 4.5.1: one sheet or several, always a pre-validation */
+            analyseSheet(found.length === 1 ? 0 : defaultSheet(found));
             message = { cls: "", text: "" };
             render();
         }).catch(err => {
@@ -342,9 +418,9 @@ function makeTimesheet(options) {
         inContext(() => {
             root.innerHTML = toolbarHtml() +
                 (message.text ? '<p class="' + message.cls + '">' + E(message.text) + "</p>" : "") +
-                (pendingSheets ? '<div class="card"><p>' + E(t("reg.chooseSheet")) + '</p><div class="actions"><select data-act="sheet" class="save-as">' +
-                    pendingSheets.map((s, i) => '<option value="' + i + '"' + (i === defaultSheet(pendingSheets) ? " selected" : "") + ">" + E(s.name) + "</option>").join("") +
-                    '</select><button type="button" class="button primary" data-act="sheetImport">' + E(t("reg.importSheet")) + "</button></div></div>" : "") +
+                (pendingSheets ? '<div class="card">' + (pendingSheets.length > 1 ? "<p>" + E(t("reg.chooseSheet")) + '</p><div class="actions"><select data-act="sheet" class="save-as">' +
+                    pendingSheets.map((s, i) => '<option value="' + i + '"' + (i === preview.index ? " selected" : "") + ">" + E(s.name) + "</option>").join("") +
+                    "</select></div>" : "") + previewHtml() + "</div>" : lastImportHtml()) +
                 (state.mode === "week" ? renderWeek() : renderMonth());
         });
         wire();
@@ -373,7 +449,7 @@ function makeTimesheet(options) {
             file.addEventListener("change", () => {
                 const f = file.files[0];
                 if (!f) return;
-                pendingSheets = null;
+                pendingSheets = null; preview = null;
                 if (/\.xlsx$/i.test(f.name)) { importExcel(f); return; }
                 Utils.readText(f).then(text => {
                     const r = inContext(() => HoursCsv.importCsv(text));
@@ -382,18 +458,25 @@ function makeTimesheet(options) {
                     render();
                 });
             });
+            const sheetSelect = q('[data-act="sheet"]');
+            if (sheetSelect) sheetSelect.addEventListener("change", () => { analyseSheet(+sheetSelect.value); render(); });
             const sheetButton = q('[data-act="sheetImport"]');
             if (sheetButton) sheetButton.addEventListener("click", () => {
-                const sheet = pendingSheets[+q('[data-act="sheet"]').value];
-                pendingSheets = null;
+                const sheet = pendingSheets[preview.index];
+                pendingSheets = null; preview = null;
                 importRegister(sheet);
             });
+            const sheetCancel = q('[data-act="sheetCancel"]');
+            if (sheetCancel) sheetCancel.addEventListener("click", () => { pendingSheets = null; preview = null; render(); });
         }
         if (canCorrect()) root.querySelectorAll("[data-add]").forEach(b => b.addEventListener("click", ev => {
             ev.stopPropagation();
             Editor.open({ date: b.dataset.add, userId: ownerId() });
         }));
         root.querySelectorAll("[data-report]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); openReport(b.dataset.report); }));
+        const sendWeek = q("[data-send-week]");
+        if (sendWeek) sendWeek.addEventListener("click", () => ValidationPage.openSend(state.year, state.week));
+        root.querySelectorAll("[data-open-week]").forEach(b => b.addEventListener("click", () => ValidationPage.openDetail(b.dataset.openWeek)));
         root.querySelectorAll("[data-reject-cr]").forEach(b => b.addEventListener("click", ev => {
             ev.stopPropagation();
             const comment = prompt(t("report.rejectPrompt"));

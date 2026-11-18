@@ -9,9 +9,8 @@
      (Storage.js → sha256): the same hash can be carried over later;
    - session in sessionStorage (key acp_session), like CONGER PAYER:
      closing the app or the tab signs out;
-   - roles (2.4): "technician" → Clock, Timesheet, Leave, Profile,
-     Settings; "admin" → administration menu only (approvals, team,
-     team timesheets, clients, configuration, profile), no clocking;
+   - what an account may see and do comes from its rights
+     (permissions.js), not from this file;
    - a deactivated account (admin action) cannot sign in.
 
    ⚠️ Demo limit (data on the device): accounts exist only on this
@@ -66,15 +65,18 @@ const Auth = (() => {
         return "ok";
     }
 
-    /* Admin action: the person will choose a new password at next sign-in.
-       (With the server this becomes an e-mail recovery, as in CONGER PAYER.) */
+    /* Manager (or team lead of the person, 4.3) action: the person will choose a new password at
+       next sign-in; the person and the other managers are told (Store.resetPassword).
+       (With the server: code by e-mail / SMS, as in CONGER PAYER.) */
     function resetPassword(id) {
-        if (!Permissions.can("users.manage") || id === Store.currentUserId()) return false;
-        return Store.updateUser(id, { pinHash: "" });
+        if (!Store.resetPassword(id)) return false;
+        if (typeof QuickUnlock !== "undefined") QuickUnlock.clear(id);   /* 3.3: no PIN nor fingerprint after a reset */
+        return true;
     }
 
     function openSession(id) {
         Store.setCurrentUser(id);
+        Store.clearPasswordUnlock();   /* 4.3: signed in after all: the "forgotten password" request is closed */
         Store.log("session.signIn", id);
         Store.persist();
         StorageAdapter.set(SESSION_KEY, JSON.stringify({ userId: id, openedAt: new Date().toISOString() }), "session");
@@ -96,11 +98,6 @@ const Auth = (() => {
         StorageAdapter.remove(SESSION_KEY, "session");
     }
 
-    /* Kept for the screens of 2.7: "admin" = can manage the users (permissions.js) */
-    function isAdmin() {
-        return Permissions.can("users.manage");
-    }
-
     /* Validation shared by the screens: null if valid, else a message key */
     function checkNewPassword(password, confirmation) {
         if (String(password || "").length < MIN_LENGTH) return "auth.tooShort";
@@ -111,6 +108,8 @@ const Auth = (() => {
     return {
         MIN_LENGTH, cryptoAvailable, sha256, hasPassword,
         setPassword, signIn, changePassword, resetPassword,
-        session, signOut, isAdmin, checkNewPassword
+        session, signOut, checkNewPassword,
+        /* 3.3: session opened by quick-unlock.js once the PIN or the fingerprint is checked */
+        openVerifiedSession: id => { const x = Store.user(id); if (x && x.pinHash && isActive(id)) openSession(id); }
     };
 })();

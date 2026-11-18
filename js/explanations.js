@@ -14,6 +14,8 @@ const Explanations = (() => {
 
     const h = Utils.hours;
     const t = I18n.t;
+    /* 4.1.8: the collective agreement the company applies (metal industry, IDCC 3248), official page */
+    const CCN_URL = "https://code.travail.gouv.fr/convention-collective/3248-metallurgie";
 
     function content() {
         const C = Hours;
@@ -25,14 +27,16 @@ const Explanations = (() => {
         const rank = n => String(Math.round(n) + 1);
         const ot45 = C.overtime(45, B);
         const recov = 24 + 2 * D;
+        /* 4.2: the texts follow the real rules (39 h ÷ 5, Monday → Friday with the register "OK") */
+        const credit = t("expl.v.credit", { day: h(D), base: h(B), n: String(Math.round(B / D)) });
         return {
             title: t("expl.title"),
             intro: t("expl.intro"),
             rules: [
                 [t("expl.r.week"), t("expl.v.goal", { goal: h(B) }), t("expl.v.contract")],
                 [t("expl.r.countdown"), t("expl.v.countdown", { goal: h(-B) }), reg],
-                [t("expl.r.credit"), t("expl.v.credit", { day: h(D) }), reg],
-                [t(o.weekendHolidays ? "expl.r.holiday" : "expl.r.holidayWeekdays"), t("expl.v.credit", { day: h(D) }), reg],
+                [t(o.creditWeekdaysOnly ? "expl.r.creditWeekdays" : "expl.r.credit"), credit, reg],
+                [t(o.weekendHolidays && !o.creditWeekdaysOnly ? "expl.r.holiday" : "expl.r.holidayWeekdays"), credit, reg],
                 [t("expl.r.lunch"), t("expl.v.deducted"), reg],
                 [t("expl.r.ot25", { from: rank(o.overtime25From), to: String(o.overtime50From) }), t("expl.v.counter25"), t("expl.src.code", { art: "L3121-36" })],
                 [t("expl.r.ot50", { from: rank(o.overtime50From) }), t("expl.v.counter50"), t("expl.src.code", { art: "L3121-36" })],
@@ -80,16 +84,7 @@ const Explanations = (() => {
 
     /* Prints (or saves as PDF) the reference document in an invisible frame */
     function print() {
-        const old = document.getElementById("refFrame");
-        if (old) old.remove();
-        const frame = document.createElement("iframe");
-        frame.id = "refFrame";
-        frame.setAttribute("aria-hidden", "true");
-        frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
-        document.body.appendChild(frame);
-        const doc = frame.contentWindow.document;
-        doc.open(); doc.write(documentHtml()); doc.close();
-        setTimeout(() => { try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch (e) { alert(t("export.printFailed")); } }, 250);
+        Utils.printHtml(documentHtml());
     }
 
     /* Card used in Settings (technicians) and Configuration (admins):
@@ -100,6 +95,8 @@ const Explanations = (() => {
             '<button type="button" class="button secondary" data-ref="download">' + E(t("ref.download")) + "</button>" +
             '<button type="button" class="button secondary" data-ref="print">' + E(t("ref.print")) + "</button></div></div>" +
             '<p class="info">' + E(t("ref.info")) + "</p>" +
+            '<p class="ref-ccn"><a href="' + CCN_URL + '" target="_blank" rel="noopener noreferrer" title="' + E(t("ref.ccnOpen")) + '">' +
+            UI.icon("file") + "<span>" + E(t("ref.ccn")) + "</span>" + UI.icon("arrow") + "</a></p>" +
             '<details class="explanations"><summary>' + E(t("ref.show")) + "</summary>" + bodyHtml() + "</details></div>";
     }
 
@@ -109,11 +106,24 @@ const Explanations = (() => {
         }));
     }
 
+    /* 4.5: how to read the time report (Reports → Export) — part of the reference document */
+    const GUIDE = ["band", "counters", "target", "kpis", "pay", "recovery", "chart", "table", "weeks", "excel"];
+    function guideHtml(id) {
+        const E = Utils.escape;
+        return "<h3" + (id ? ' id="' + id + '"' : "") + ">" + E(t("guide.title")) + "</h3>" + '<p class="info">' + E(t("guide.intro")) + "</p>" +
+            '<dl class="guide">' + GUIDE.map(k => "<dt>" + E(t("guide." + k + ".t")) + "</dt><dd>" + E(t("guide." + k + ".d")) + "</dd>").join("") + "</dl>";
+    }
+    function guideCardHtml() {
+        return '<div class="card guide-card">' + guideHtml("ref-report") + "</div>";
+    }
+
     /* HTML body (no title, no container) */
     function bodyHtml() {
         const E = Utils.escape;
         const c = content();
-        return '<p class="info">' + E(c.intro) + "</p>" +
+                return '<p class="info">' + E(c.intro) + "</p>" +
+            /* 4.1.8: link kept in the downloaded / printed document (the address is written in full for paper) */
+            "<p>" + E(t("ref.ccn")) + ' : <a href="' + CCN_URL + '" target="_blank" rel="noopener noreferrer">' + CCN_URL + "</a></p>" +
             "<h3>" + E(t("expl.section.rules")) + "</h3>" +
             '<div class="scroll"><table class="table"><thead><tr><th>' + E(t("expl.col.reason")) + '</th><th class="num">' +
             E(t("expl.col.rate")) + "</th><th>" + E(t("expl.col.text")) + "</th></tr></thead><tbody>" +
@@ -123,8 +133,8 @@ const Explanations = (() => {
             "<h3>" + E(t("expl.section.examples")) + "</h3>" +
             c.examples.map(x => '<div class="example"><p><strong>' + E(x[0]) + "</strong></p><p>" + E(x[1]) + "</p>" +
                 '<p class="example-result">' + E(x[2]) + "</p></div>").join("") +
-            '<p class="info">' + E(c.sources) + "</p>";
+            '<p class="info">' + E(c.sources) + "</p>" + guideHtml();
     }
 
-    return { content, bodyHtml, documentHtml, download, print, cardHtml, wire };
+    return { content, bodyHtml, documentHtml, download, print, cardHtml, guideCardHtml, wire };
 })();

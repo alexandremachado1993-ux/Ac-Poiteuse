@@ -5,16 +5,17 @@
    Strategy: app files served from the cache, updated in the
    background when the network is available.
    ============================================================= */
-const CACHE_VERSION = "acp-v20";
+const CACHE_VERSION = "acp-v54";
 const FILES = [
     "./", "index.html", "manifest.json", "css/style.css",
-    "images/logo.png", "images/icon-192.png", "images/icon-512.png",
+    "images/logo.png", "images/app-icon.svg", "images/icon-192.png", "images/icon-512.png",
     "js/storage-adapter.js", "js/i18n.js", "js/translations.js", "js/utils.js", "js/holidays.js", "js/store.js",
-    "js/permissions.js", "js/auth.js", "js/hours.js", "js/segments.js", "js/leave.js", "js/countdown.js",
-    "js/explanations.js", "js/xlsx.js", "js/hours-csv.js", "js/xlsx-reader.js", "js/register-import.js", "js/exports.js",
-    "js/editor.js", "js/reminders.js", "js/ui.js", "js/page-login.js", "js/page-timesheet.js", "js/page-clock.js",
-    "js/page-dashboard.js", "js/page-leave.js", "js/page-clients.js", "js/page-profile.js", "js/page-team.js", "js/page-reports.js",
-    "js/page-admin-panels.js", "js/page-settings.js", "js/app.js"
+    "js/permissions.js", "js/validation.js", "js/auth.js", "js/quick-unlock.js", "js/hours.js", "js/segments.js", "js/leave.js",
+    "js/countdown.js", "js/explanations.js", "js/xlsx.js", "js/hours-csv.js", "js/xlsx-reader.js", "js/register-import.js",
+    "js/exports.js", "js/editor.js", "js/reminders.js", "js/ui.js", "js/layout.js", "js/welcome.js", "js/page-login.js", "js/page-timesheet.js",
+    "js/page-clock.js", "js/page-dashboard.js", "js/page-leave.js", "js/page-clients.js", "js/page-profile.js", "js/page-team.js",
+    "js/report-doc.js", "js/page-reports.js", "js/page-clockings.js", "js/page-admin-panels.js", "js/page-weeks.js", "js/page-settings.js", "js/app.js",
+    "fonts/inter.woff2", "fonts/inter-tight.woff2"
 ];
 
 self.addEventListener("install", e => {

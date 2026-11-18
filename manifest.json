@@ -1,18 +1,67 @@
 {
-    "name": "AC Conger Payer + clocking",
-    "short_name": "AC Clocking",
+    "name": "My Time Keeper",
+    "short_name": "Time Keeper",
     "start_url": "./index.html",
     "scope": "./",
     "display": "standalone",
-    "background_color": "#F5F5F5",
-    "theme_color": "#C8102E",
+    "background_color": "#111D2D",
+    "theme_color": "#111D2D",
     "icons": [
-        { "src": "images/icon-192.png", "sizes": "192x192", "type": "image/png" },
-        { "src": "images/icon-512.png", "sizes": "512x512", "type": "image/png" }
+        {
+            "src": "images/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "images/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
     ],
     "shortcuts": [
-        { "name": "Work", "url": "./index.html?start=work#clock" },
-        { "name": "Travel", "url": "./index.html?start=travel#clock" },
-        { "name": "Timesheet", "url": "./index.html#clock/sheet" }
+        {
+            "name": "Démarrer · Travail",
+            "short_name": "Travail",
+            "url": "./index.html?start=work#clock",
+            "icons": [
+                {
+                    "src": "images/icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        },
+        {
+            "name": "Pause",
+            "short_name": "Pause",
+            "url": "./index.html?action=pause#clock",
+            "icons": [
+                {
+                    "src": "images/icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        },
+        {
+            "name": "Pointer mon départ",
+            "short_name": "Départ",
+            "url": "./index.html?action=stop#clock",
+            "icons": [
+                {
+                    "src": "images/icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        },
+        {
+            "name": "Feuille de temps",
+            "short_name": "Heures",
+            "url": "./index.html#clock/sheet",
+            "icons": [
+                {
+                    "src": "images/icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        }
     ]
 }

@@ -177,21 +177,7 @@ const Exports = (() => {
 
     /* Prints the document in an invisible frame (print or PDF). */
     function print(p) {
-        const old = document.getElementById("printFrame");
-        if (old) old.remove();
-        const frame = document.createElement("iframe");
-        frame.id = "printFrame";
-        frame.setAttribute("aria-hidden", "true");
-        frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
-        document.body.appendChild(frame);
-        const doc = frame.contentWindow.document;
-        doc.open();
-        doc.write(documentHtml(p));
-        doc.close();
-        setTimeout(() => {
-            try { frame.contentWindow.focus(); frame.contentWindow.print(); }
-            catch (e) { alert(t("export.printFailed")); }
-        }, 250);
+        Utils.printHtml(documentHtml(p));
         return entriesOf(p).length;
     }
 
