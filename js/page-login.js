@@ -31,7 +31,9 @@ const LoginPage = (() => {
             '<div class="login-time"><div class="login-clock">' + Utils.clock(now) + '</div><div class="login-date">' + UI.icon("calendar") +
             "<span>" + E(Utils.longDate(Utils.isoLocal(now))) + "</span></div></div>" +
             '<div class="login-company"><img src="images/logo.png" alt="Auxiliar Conservera"><span>Auxiliar Conservera</span></div></aside>' +
-            '<div class="login-main"><div class="login-card">' + inner + "</div></div>";
+            '<div class="login-main"><div class="login-card">' + inner + "</div></div>" +
+            /* 4.7.3: version of the app, bottom right, on the line of the company logo */
+            '<p class="login-version">' + E(t("settings.version", { v: SettingsPage.APP_VERSION })) + "</p>";
     }
 
     function wireLanguage(again) {
