@@ -1127,7 +1127,7 @@ dialog.editor, dialog.sheet { border-radius: 16px; }
 .hero-scope { font-weight: 600; color: var(--side-text); }
 
 /* ---- 4.1.1: clock page — the live card and "My week" at working size ---- */
-.clock-hero { grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr); align-items: start; gap: var(--gap); }
+.clock-hero { grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr); align-items: stretch; gap: var(--gap); }
 @media (max-width: 1000px) { .clock-hero { grid-template-columns: 1fr; } }
 .timer-card.hero { padding: var(--s-5) var(--s-6); gap: var(--s-3); }
 .timer-card.hero::after { width: 160px; height: 160px; right: -48px; top: -48px; border-width: 22px; }
@@ -1146,7 +1146,7 @@ dialog.editor, dialog.sheet { border-radius: 16px; }
 .figures span { font-size: var(--fs-caption); }
 .figures strong { font-size: 1.25rem; }
 .ring .ring-in small { font-size: .6875rem; }
-#ckSummary .wk-bar .wk-col { height: 88px; }
+#ckSummary .wk-bar .wk-col { height: auto; min-height: 88px; flex: 1; }
 #ckSummary .wk-bar .wk-val, #ckSummary .wk-bar .wk-day { font-size: .6875rem; }
 .timeline { height: 10px; }
 .legend { font-size: var(--fs-caption); gap: var(--s-1) var(--s-3); }
@@ -1454,3 +1454,9 @@ label.check.rx-sub { padding-left: var(--s-6); color: var(--muted); }
 .timer-card.hero::after { opacity: .55; }
 .client-row select { display: block; width: 100%; }
 .ring-pct { font-size: .625rem; font-weight: 700; color: var(--muted); }
+
+/* 4.7.2: "My week" as high as the clock card — the bars take the free height (no empty bottom) */
+.clock-hero > .card { display: flex; flex-direction: column; }
+#ckSummary { flex: 1; display: flex; flex-direction: column; }
+.ck-bars { flex: 1; display: flex; flex-direction: column; margin-top: var(--s-4); }
+.ck-bars .wk-bars { flex: 1; }

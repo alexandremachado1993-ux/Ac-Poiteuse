@@ -5,7 +5,7 @@
    Strategy: app files served from the cache, updated in the
    background when the network is available.
    ============================================================= */
-const CACHE_VERSION = "acp-v54";
+const CACHE_VERSION = "acp-v55";
 const FILES = [
     "./", "index.html", "manifest.json", "css/style.css",
     "images/logo.png", "images/app-icon.svg", "images/icon-192.png", "images/icon-512.png",

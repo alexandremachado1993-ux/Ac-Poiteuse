@@ -287,7 +287,7 @@ const ClockPage = (() => {
             "<div><span>" + E(t("clock.today")) + "</span><strong>" + Utils.hm(summary.totalMs) + "</strong></div>" +
             "<div><span>" + E(t("clock.ofWhichNight")) + "</span><strong>" + Utils.hm(summary.nightMs) + "</strong></div>" +
             "</div></div>" + dayCheck(today) + Countdown.detailHtml(s) +
-            '<div style="margin-top:1rem">' + UI.weekBars(sheet) + UI.weekLegend() + "</div>";
+            '<div class="ck-bars">' + UI.weekBars(sheet) + UI.weekLegend() + "</div>";
 
         const dayStart = Utils.localDate(today).getTime();
         const dayLength = Utils.localDate(Utils.addDays(today, 1)).getTime() - dayStart;
