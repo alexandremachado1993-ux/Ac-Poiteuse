@@ -15,7 +15,7 @@ const SettingsPage = (() => {
 
     const E = Utils.escape;
     const t = I18n.t;
-    const APP_VERSION = "4.7.2";
+    const APP_VERSION = "4.7.3";
     let root = null;
     let tab = "profile";
 
